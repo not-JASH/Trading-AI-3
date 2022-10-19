@@ -26,15 +26,50 @@ classdef generator
 
         end
 
-        function [dly,info] = scalinglayer(obj,dlx)
+        function [dly,FineTuneCoeff,ScaleFactor] = scalinglayer(obj,x)
+            % layer for scaling input data
 
+            ScaleFactor = range(abs(x));                % scale input data by the range of its absolute values
+            dlx = gpudl(x/ScaleFactor);                  
+            
+            FineTuneCoeff = FineTunesScaling(dlx);      % obtain fine tune coefficient
+            dly = dlx*FineTuneCoeff;                    % scale dlx by fine tune coeff
+
+            function dly = FineTuneScaling(dlx,layer)
+                % function for determining fine tune coefficient
+
+            end
         end
 
         function [dly,info] = reweightdetrendlayer(obj,dlx)
+            % layer for reweighting and detrending input data
 
+            info = InputEncoder(dlx,obj.RDL.InputEncoder);                          % encode input data
+            WeightCoeffs = ReweightDecoder(dlx,info,obj.RDL.ReweightDecoder);       % compute reweighing coefficients (outlier detection & removal)
+            DetrendValues = DetrendDecoder(dlx,info,obj.RDL.DetrendDecoder);        % compute detrending values
+
+            dly = dlx.*WeightCoeffs + DetrendValues;                                % reweight and detrend data
+
+            function info = InputEncoder(dlx,layer)
+                % layer for encoding input data into relevant information
+
+            end
+
+            function WeightCoeffs = ReweightDecoder(dlx,info,layer)
+                % function for decoding encoder data into reweighting
+                % coefficients
+                
+            end
+
+            function DetrendValues = DetrendDecoder(dlx,info,layer)
+                % function for decoding encoder data into values for
+                % detrending
+
+            end
         end
 
         function [dly] = waveletlayer(obj,dlx)
+            % layer to wavelet transform input data
 
         end
 
@@ -53,8 +88,8 @@ classdef generator
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         %       Layer Initialization Functions
 
-        function layer = init_scalinglayer(layersizes)
-
+        function [layer] = init_scalinglayer(layersizes)
+            
         end
 
         function layer = init_reweightdetrendlayer(layersizes)
