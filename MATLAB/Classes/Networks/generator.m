@@ -1,4 +1,4 @@
-classdef generator
+classdef generator < DeepNetwork
     properties
         weights
         info
@@ -75,7 +75,10 @@ classdef generator
 
             function dly = FineTuneScaling(dlx,layer)
                 % function for determining fine tune coefficient
-
+                dly = fc_layer(obj.dropout(dlx),layer.block{1},'CB',@relu);         % fully connected layer on scaled values, relu activation
+                for i = 2:obj.info.SL.FTS.nBlocks                                   % loop through layers
+                    dly = fc_layer(obj.dropout(dlx),layerb.block{i},'CB',@relu);    % fully connected layer, relu activation
+                end
             end
         end
 
@@ -91,18 +94,43 @@ classdef generator
             function info = InputEncoder(dlx,layer)
                 % layer for encoding input data into relevant information
 
+                info = convlayer(obj.dropout(dlx),layer.block{1},'CB');             % 1D convolution on input data
+                info = relu(info);                                                  % activation
+
+                for i = 2:obj.info.RDL.IE.nBlocks                                   % loop through layers
+                    info = convlayer(obj.dropout(info),layer.block{i},'SCB');       % 1D convolution 
+                    info = relu(info);                                              % activation
+                end
             end
 
-            function WeightCoeffs = ReweightDecoder(dlx,info,layer)
+            function WeightCoeffs = ReweightDecoder(info,layer)
                 % function for decoding encoder data into reweighting
                 % coefficients
+
+                info = fc_layer(obj.dropout(info),layer.block{1},'SCB',@relu);      % fully connected layer on encoder output, relu activation
                 
+                for i = 2:obj.info.RDL.RE.nBlocks                                   % loop through layers
+                    info = fc_layer(obj.dropout(info),layer.block{i},'CB',@relu);   % fully connected layer (batchnorm?), relu activation
+                end
+                WeightCoeffs = info;
             end
 
-            function DetrendValues = DetrendDecoder(dlx,info,layer)
+            function DetrendValues = DetrendDecoder(info,layer)
                 % function for decoding encoder data into values for
                 % detrending
+                
+                info = fc_layer(obj.dropout(info),layer.block{1},'SCB',@relu);      % fully connected layer on encoder output, relu activation
 
+                for i = 2:obj.info.RDL.DD.nBlocks                                   % loop through layers
+                    info = fc_layer(obj.dropout(info),layer.block{i},'CB',@relu);   % fully connected layer (batchnorm?), relu activation
+                end
+                DetrendValues = info;
+            end
+
+            function dly = fc_layer(dlx,layer,dataformat,activation)
+                % function specific wrapper for fullyconnected layer
+                dly = fullyconnectedlayer(dlx,layer.fc1,'DataFormat',dataformat);   % fully connected layer
+                dly = activation(dly);                                              % activation function
             end
         end
 
@@ -165,6 +193,13 @@ classdef generator
         function layer = init_inversescalinglayer(obj,layersizes)
 
         end        
+
+        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        %       Other Functions
+
+        function data = dropout(obj,data)
+            
+        end
     end
 
 end
