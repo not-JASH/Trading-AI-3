@@ -7,14 +7,17 @@ classdef generator < DeepNetwork
     end
 
     methods
-        function obj = generator(layersizes)
+        function obj = generator(layersizes,WindowSize,Overlap,nSubsamples)
              % generator initialization function
-             obj.info.dropout   = true;
-             obj.info.training  = true;
+
+             obj.info.training      = true;             % boolean denoting if network is training
+             obj.info.WindowSize    = WindowSize;       % Sample windowSize
+             obj.info.Overlap       = Overlap;          % Subsample overlap
+             obj.info.nSubsamples   = nSubsamples;      % No. subsamples                
 
              [obj.weights.SL,obj.info.SL]       = obj.init_scalinglayer(layersizes.SL);                 % Initialize scaling layer.
              [obj.weights.RDL,obj.info.RDL]     = obj.init_reweightdetrendlayer(layersizes.RDL);        % Initialize reweight-detrend layer.
-             [obj.weights.WTL,obj.info.WTL]     = obj.init_waveletlayer(layersizes.WTL);                % Initialize wavelet layer.
+             [~,obj.info.WTL]                   = obj.init_waveletlayer(layersizes.WTL);                % Initialize wavelet layer.
              [obj.weights.SEL,obj.info.SEL]     = obj.init_set_encodinglayer(layersizes.SEL);           % Initialize set-encoder.
              [obj.weights.EEL,obj.info.EEL]     = obj.init_estimate_encodinglayer(layersizes.EEL);      % Initialize estimate-encoder.
              [obj.weights.PL,obj.info.PL]       = obj.init_predictionlayer(layersizes.PL);              % Initialize prediction layer.
@@ -23,8 +26,10 @@ classdef generator < DeepNetwork
 
         end
         
-        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        %
         %       Network & Layer Functions
+
 
         function [dly,varargout] = predict(obj,x,varargin)
             % feed forward function
@@ -36,7 +41,7 @@ classdef generator < DeepNetwork
             end
             
             [x,FineTuneCoeff,ScaleFactor]       = obj.scalinglayer(x);                                              % Scale input data 
-            dlx                                 = subsample_data(x,obj.info.windowsize,obj.info.overlap);           % Subsample data
+            dlx                                 = subsample_data(x);                                                % Subsample data
             [dlx,ReweightDetrendInfo]           = obj.reweightdetrendlayer(dlx);                                    % Reweight and detrend subsampled data.
             dly_set                             = obj.waveletLayer(dlx);                                            % Wavelet transform dataset.
             dly_set                             = obj.set_encodinglayer(dly_set);                                   % Encode input dataset. 
@@ -58,9 +63,22 @@ classdef generator < DeepNetwork
                 varargout{5} = dly2;                            % Re-scaled, re-trended prediction.
             end
 
-            function dlx = subsample_data(x,windowsize,overlap)
+            function dlx = subsample_data(obj,x)
                 % function for subsampling and rearranging scaled data
+                
+                persistent Set
 
+                if isempty(Set)
+                    Set = gpudl(zeros([obj.info.WindowSize size(x,2) obj.info.nSubsamples],obj.DataType),'');     % Initialize set as zeros
+                end
+
+                locs = [1:windowsize];                                          % Initialize locs 
+                for i = 1:obj.info.nSubsamples                                  % Loop through subsamples
+                    Set(:,:,i) = x(locs,:);                                     % Subsample x
+                    locs = locs + (obj.info.WindowSize-obj.info.Overlap);       % Increase locs
+                end
+
+                dlx = permute(Set,[1 3 2]);    % Permute set so its dimensions are TCB           
             end
         end
 
@@ -70,13 +88,15 @@ classdef generator < DeepNetwork
             ScaleFactor = range(abs(x));                % scale input data by the range of its absolute values
             dlx = gpudl(x/ScaleFactor);                  
             
-            FineTuneCoeff = FineTunesScaling(dlx);      % obtain fine tune coefficient
+            FineTuneCoeff = FineTuneScaling(dlx);       % obtain fine tune coefficient
             dly = dlx*FineTuneCoeff;                    % scale dlx by fine tune coeff
 
             function dly = FineTuneScaling(dlx,layer)
                 % function for determining fine tune coefficient
-                dly = fc_layer(obj.dropout(dlx),layer.block{1},'CB',@relu);         % fully connected layer on 
-
+                dly = fc_layer(obj.dropout(dlx),layer.block{1},'CB',@relu);         % fully connected layer on scaled values, relu activation
+                for i = 2:obj.info.SL.FTS.nBlocks                                   % loop through layers
+                    dly = fc_layer(obj.dropout(dlx),layerb.block{i},'CB',@relu);    % fully connected layer, relu activation
+                end
             end
         end
 
@@ -135,6 +155,10 @@ classdef generator < DeepNetwork
         function [dly] = waveletlayer(obj,dlx)
             % layer to wavelet transform input data
 
+            dly = dlcwt(dlx,obj.info.WTL.psi_fvec,obj.info.WTL.filter_idx,'DataFormat','TCB');      % Wavelet transform subsampled sets
+            dly = permute(dly,[4 1 2 3])
+
+
         end
 
         function [dly] = set_encodinglayer(obj,dlx)
@@ -157,38 +181,45 @@ classdef generator < DeepNetwork
 
         end
 
-        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        %       Layer Initialization Functions
+        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        %
+        %           Layer Initialization Functions
 
-        function [layer] = init_scalinglayer(obj,layersizes)
+        function [layer,info] = init_scalinglayer(obj,layersizes)
             
         end
 
-        function layer = init_reweightdetrendlayer(obj,layersizes)
+        function [layer,info] = init_reweightdetrendlayer(obj,layersizes)
 
         end
 
-        function layer = init_waveletlayer(obj,layersizes)
+        function [layer,info] = init_waveletlayer(obj,layersizes)
+            % function for initializing wavelet layer
+
+            wavelet = cwtfilterbank('SignalLength',obj.info.WindowSize,'Boundary','periodic');
+            [info.psi_fvec,info.filter_idx] = cwtfilter2array(wavelet);
+
+            layer = [];
 
         end
 
-        function layer = init_set_encodinglayer(obj,layersizes)
+        function [layer,info] = init_set_encodinglayer(obj,layersizes)
 
         end
 
-        function layer = init_estimate_encodinglayer(obj,layersizes)
+        function [layer,info] = init_estimate_encodinglayer(obj,layersizes)
 
         end
 
-        function layer = init_predictionlayer(obj,layersizes)
+        function [layer,info] = init_predictionlayer(obj,layersizes)
 
         end
 
-        function layer = init_inversedetrendlayer(obj,layersizes)
+        function [layer,info] = init_inversedetrendlayer(obj,layersizes)
 
         end
 
-        function layer = init_inversescalinglayer(obj,layersizes)
+        function [layer,info] = init_inversescalinglayer(obj,layersizes)
 
         end        
 

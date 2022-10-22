@@ -1,0 +1,15 @@
+function samples = query_samples(nSamples,ws)
+    samples = cell(nSamples,1);
+    data = get_data;
+
+    x = 1:ws;
+
+    for i = 1:nSamples
+        dt = [0 0 ]
+    
+
+       dt = diff(data(x0+x,1));
+
+    end
+
+end

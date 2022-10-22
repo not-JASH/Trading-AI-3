@@ -23,8 +23,13 @@ layersizes.ISL  = [];   % Inverse-Scaling Layer
 WindowSize              = 480;
 ExtrapolationLength     = 45;
 Overlap                 = 60;
+nSubsamples             = 25;
+nSamples                = 1e3;
 
-nSamples = 1e3;
+
+InputSize = nSubsamples*(WindowSize-Overlap) + WindowSize;
+
+
 
 % Initialize Networks
 

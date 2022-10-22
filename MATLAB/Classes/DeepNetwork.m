@@ -76,8 +76,13 @@ classdef DeepNetwork
         function dly = batchnormlayer(dlx,weights,varargin)
             dly = batchnorm(dlx,weights.o,weights.sf,varargin{:});
         end
-    
 
+        %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        
+        function data = gpudl(data,labels)
+            % function for creating taced deep learning arrays on gpu
+            data = gpuArray(dlarray(data,labels));
+        end
     end
 end
     
