@@ -20,11 +20,11 @@ classdef discriminator < DeepNetwork
         function obj = discriminator(LayerSizes,WindowSize)
             % constructor
             
-            obj.info.WindowSize = WindowSize;                                           % store windowsize in network's info
+            obj.info.WindowSize = WindowSize;                                       % store windowsize in network's info
             
-            [~,obj.info.WTL] = obj.init_waveletlayer;                                   % initialize wavelet layer
+            [~,obj.info.WTL] = obj.init_waveletlayer;                               % initialize wavelet layer
                 
-            [obj.weights.PL,obj.info.PL] = obj.init_predictionlayer(LayerSizes.PL);     % init prediction layer
+            [obj.weights.PL,obj.info.PL] = obj.init_predictionlayer(LayerSizes.PL); % init prediction layer
         end
 
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -49,7 +49,7 @@ classdef discriminator < DeepNetwork
                 % function for convolution x2 + maxpool layer 
 
                 dly = obj.convlayer(dlx,layer.cn2d1,'DataFormat','SSCB');           % first 2D conv layer
-                dly = activation(dly);                                              % activation layer
+                dly = activation(dly);                                             % activation layer
 
                 dly = obj.convlayer(dly,layer.cn2d2,'DataFormat','SSCB');           % second 2D conv layer
                 dly = activation(dly);                                              % activation layer
@@ -76,34 +76,26 @@ classdef discriminator < DeepNetwork
         function [layer,info] = init_waveletlayer(obj)
             % function for initializing wavelet layer
 
-            wavelet = cwtfilterbank('SignalLength',obj.info.WindowSize,'Boundary','periodic');  % init wavelet filterbank
-            [info.psi_fvec,info.filter_idx] = cwtfilter2array(wavelet);                         % convert filterbank into array and load into memory
+            wavelet = cwtfilterbank('SignalLength',obj.info.WindowSize,'Boundary','periodic');
+            [info.psi_fvec,info.filter_idx] = cwtfilter2array(wavelet);
 
-            layer = []; % no layer weights
+            layer = [];
         end
 
         function [layer,info] = init_predictionlayer(obj,layersizes)
             % init prediction layer
             
-            info.nBlocks = .5*size(layersizes,1);                                           % determine number of blocks    
+            info.nBlocks = .5*size(layersizes,1);
             assert(rem(info.IE.nBlocks,1)==0,"rows in layersizes must be a factor of two");
 
-            layer.blocks = cell(info.nBlocks,1);                                            % init cell array for blocks
-            for i = 1:info.nBlocks                                                          % loop through layer blocks
-                layer.blocks{i} = init_predictionlayerblock(layersizes(2*i-1:2*i,:));       % init prediction layer block
-
-                debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
-                obj.debug_info(debug_message,info);                                         % display layer output size 
-            end
+            layer.blocks = cell(info.nBlocks,1);
+            for i = 1:info.nBlocks
+                layer.blocks{i} = init_predictionlayerblock()
             
-            function block = init_predictionlayerblock(ls)
-                % function for initializing prediction layer block
 
-                block.cn2d1 = init_convlayer(ls(1,1:2),ls(1,3),ls(1,4),obj.DataType);       % init first conv layer
-                block.cn2d2 = init_convlayer(ls(2,1:2),ls(2,3),ls(2,4),obj.DataType);       % init second conv layer
 
-                block.bn1   = init_batchnormlayer(ls(2,4),obj.DataType);                    % init batchnorm layer
-            end
+
+
         end
     end
 end 

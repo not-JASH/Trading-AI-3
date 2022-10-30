@@ -1,3 +1,11 @@
+%{
+        Deep Network Superclass
+
+        Jashua Luna
+        October 2022
+%}
+
+
 classdef DeepNetwork
     properties
         DataType = 'single';        %   Network Datatype
@@ -169,8 +177,25 @@ classdef DeepNetwork
 
 
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        
+        %   Other Functions
 
+        function [data,count] = struct_tree2cell(data)
+            count = 0;
+            if isstruct(data)
+                data = struct2cell(data);
+                for i = 1:length(data)
+                    [data{i},temp] = DeepNetwork.struct_tree2cell(data{i});
+                    count = count+temp;
+                end
+            elseif iscell(data)
+                for i = 1:length(data)
+                    [data{i},temp] = DeepNetwork.struct_tree2cell(data{i});
+                    count = count+temp;
+                end
+            elseif isdlarray(data)
+                count = numel(data);
+            end             
+        end
     end
 end
     
