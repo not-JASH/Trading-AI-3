@@ -95,7 +95,7 @@ Overlap                 = 20;
 nSubsamples             = 64;
 nSamples                = 1e3;
 
-BatchSize               = 64;
+BatchSize               = 48;
 
 
 InputSize = nSubsamples*(WindowSize-Overlap) + WindowSize;

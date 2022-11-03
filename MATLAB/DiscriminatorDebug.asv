@@ -1,0 +1,21 @@
+%{
+        Script for Debugging Discriminator
+
+        Jashua Luna
+        October 2022
+%}
+
+
+layersizes.PL = [
+    4   4   2   16;
+    4   4   16  32
+    ];
+
+windowsize = 80;
+
+
+Disc = discriminator(layersizes,windowsize);
+Disc.Debug = true;
+
+sample = rand(windowsize,1);
+sample = gpudl(as)

@@ -33,7 +33,73 @@ classdef generator < DeepNetwork
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         %
         %       Network & Layer Functions
+        
+        function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
+            % function for computing generator and discriminator loss        
 
+            [dly,dlx_rwdt,dly_pl] = obj.predict(xbatch,xhatbatch);     % feed forward through generator [re-trended output, de-trended & re-weighed input, prediction layer output] 
+
+            yes = disc.predict(outputs.y_dt,inject_noise(outputs.y));       % determine discriminator output on real samples
+            no  = disc.predict(dly);                                        % determine discriminator output on predicted samples
+
+            rwdt_loss           = compute_reweight_detrend_loss(dlx_rwdt,outputs.x);       % compute reweight-detrend layer loss
+            prediction_loss     = compute_prediction_loss(dly_pl,outputs.y_dt);            % compute prediction layer loss
+            retrend_loss        = compute_retrend_loss(dly,outputs.y);                     % compute retrend layer loss
+
+            disc_loss = -.5*mean(log(yes+eps) + log(1-no+eps),'all');   % discriminator loss
+
+            gen_loss = -.5*mean(log(no+eps),'all') + 5*rwdt_loss + 50*prediction_loss + 100*retrend_loss;   % combine layer & discriminator losses for gen loss
+            
+            function loss = compute_reweight_detrend_loss(dlx,x)
+                % function for computing reweight-detrend-layer loss
+                
+                loss = huber(dlx,dlarray(x,''),'DataFormat','TCB');     % compute loss as smooth L1 between reweight-detrend layer output and reweighted-detrended reference sample
+                                                                        % this function's reduction method is summation by default (satisfies aml loss function)
+            end
+
+            function loss = compute_prediction_loss(dly,y)
+                % function for computing prediction layer loss
+
+                loss = huber(dly,dlarray(y,''),'DataFormat','TB');      % compute smooth L1 between prediction layer output and detrended output samples
+            end
+
+            function loss = compute_retrend_loss(dly,y)
+                % function for computing retrend-layer loss
+                
+                loss = huber(dly,dlarray(y,''),'DataFormat','TB');      % compute smooth L1 between retrend layer output and expected output samples
+            end
+        end
+
+        function y = reweight_detrend(obj,x)
+            % function for generating reweighted-detrended samples 
+            % where x is a two dimensional array TB 
+
+            x = huber_reweight(obj.subsample(x));       % subsample and reweight x 
+            y = obj.waveletlayer(x);                    % obtain the waveletlayer output of x
+            y = inverse_waveletlayer(y);                % inverse wavelet layer y
+            
+            function xbatch = huber_reweight(xbatch)
+                % function for reweighting xbatch with huber weigh function
+                % xbatch is in format TB
+
+                sf  = mad(xbatch,1,1)/0.6745;               % compute scale factor as median absolute deviation divided by 0.6745
+                r   = abs(xbatch - median(xbatch,1))/sf;    % compute residual as abs delta x - median(x) divided by sf
+
+                w = huber_weight(r,1,547);      % get huber weights
+                xbatch = w.*xbatch;             % reweight samples
+            end
+
+            function weights = huber_weight(x,c)
+                % function for determining huber weights
+
+                weights = zeros(size(x));
+                for i = 1:size(x,2)
+                    gtc = x(:,i)>= c(i);                   % locations of x values greater than or equal to c
+                    weights(gtc,i) = 1;                    % weights at locs = 1
+                    weights(~gtc,i) = c(i)/x(~gtc,i);      % otherwise weights = c/x
+                end                 
+            end
+        end
 
         function [dly,varargout] = predict(obj,x,varargin)
             % feed forward function
@@ -45,7 +111,7 @@ classdef generator < DeepNetwork
             end
             
             [x,ScaleFactor]                     = obj.scalinglayer(x);                                              % Scale input data 
-            dlx                                 = subsample_data(x);                                                % Subsample data
+            dlx                                 = obj.subsample_data(x);                                            % Subsample data
             [dlx,ReweightDetrendInfo]           = obj.reweightdetrendlayer(dlx);                                    % Reweight and detrend subsampled data.
             dly_set                             = obj.waveletlayer(dlx);                                            % Wavelet transform dataset.
             dly_set                             = obj.set_encodinglayer(dly_set);                                   % Encode input dataset. 
@@ -61,32 +127,34 @@ classdef generator < DeepNetwork
                 obj.previous_estimate = dly_estimate;           % It would be more efficient to have two separate functions for training and use
                 varargout{1} = obj;
             else                                                % Otherwise, return all values relevant to the loss function.
-                varargout{1} = x;                               % Scaled data.
-                varargout{2} = dlx;                             % Reweighted and Detrended Data.
-                varargout{3} = dly_estimate;                    % Un-scaled prediction.
-                varargout{4} = dly1;                            % Re-trended prediction.
+%                 varargout{1} = x;                               % Scaled data.
+                varargout{1} = dlx;                             % Reweighted and Detrended Data.
+                varargout{2} = dly_estimate;                    % Un-scaled prediction.
+%                 varargout{3} = dly1;                            % Re-trended prediction.
 %                 varargout{5} = dly2;                          % Re-scaled, re-trended prediction.
             end
 
-            function dlx = subsample_data(x)
-                % function for subsampling and rearranging scaled data
-                persistent set
 
-                obj.debug_info("<strong>Subsampling Layer</strong>",[]);        % display active layer's name while in debug
-                
-                if isempty(set)                                                 % if persistent variable is empty initialize set as zeros
-                    set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples obj.info.BatchSize],obj.DataType),'');           % [ws nsubsamples batchsize]
-                    %       [windowsize nsumbsamples batchsize] TCB
-                end
-                
-                locs = [1:obj.info.WindowSize];                                 % Initialize locs 
-                for i = 1:obj.info.nSubsamples                                  % Loop through subsamples
-                    set(:,i,:) = x(locs,:,:);                                   % Subsample x
-                    locs = locs + (obj.info.WindowSize-obj.info.Overlap);       % Increase locs
-                end
-                dlx = set;
-                obj.debug_info("Reshaped Data Sizes: ",dlx);                    % display output's dimensions while in debug    [TCB]
+        end
+
+        function dlx = subsample_data(obj,x)
+            % function for subsampling and rearranging scaled data
+            persistent set
+
+            obj.debug_info("<strong>Subsampling Layer</strong>",[]);        % display active layer's name while in debug
+            
+            if isempty(set)                                                 % if persistent variable is empty initialize set as zeros
+                set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples obj.info.BatchSize],obj.DataType),'');           % [ws nsubsamples batchsize]
+                %       [windowsize nsumbsamples batchsize] TCB
             end
+            
+            locs = [1:obj.info.WindowSize];                                 % Initialize locs 
+            for i = 1:obj.info.nSubsamples                                  % Loop through subsamples
+                set(:,i,:) = x(locs,:,:);                                   % Subsample x
+                locs = locs + (obj.info.WindowSize-obj.info.Overlap);       % Increase locs
+            end
+            dlx = set;
+            obj.debug_info("Reshaped Data Sizes: ",dlx);                    % display output's dimensions while in debug    [TCB]
         end
 
         function [dly,ScaleFactor] = scalinglayer(obj,x)
@@ -519,6 +587,10 @@ classdef generator < DeepNetwork
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         %       Other Functions
 
+        function obj = weightless_copy(obj)
+            % function for copying generator object without weights
 
+            obj.weights = [];       % empty weights
+        end
     end
 end
