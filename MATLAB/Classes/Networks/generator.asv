@@ -43,19 +43,7 @@ classdef generator < DeepNetwork
         %
         %       Network & Layer Functions
 
-        function [xdata,ydata] = get_trainingdata(obj,nSamples)
-            % function for generating training samples
-
-            
-
-        end
-
-        function [xbatch,ybatch] = get_batch(obj,xdata,ydata)
-            % function for converting cell arrays of training data to dl,nD arrays on  gpu
-
-
-
-        end
+        function 
         
         function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
             % function for computing generator and discriminator loss        

@@ -3,6 +3,8 @@
 
         Jashua Luna
         October 2022
+
+        Analyzes a signal's spectral content to determine if it is real.
 %}
 
 classdef discriminator < DeepNetwork
@@ -107,6 +109,34 @@ classdef discriminator < DeepNetwork
 
                 block.bn1   = obj.init_batchnormlayer(ls(2,4),obj.DataType);                    % init batchnorm layer
             end
+        end
+    end
+
+    methods (Static)
+        function layersizes = layersizes_discriminator
+            % function for default layersizes
+
+            layersizes.PL = prediction_layersizes;      % prediction layer
+
+            function layersizes = prediction_layersizes
+                % function for discriminator prediction layer
+
+                layersizes = [               
+        
+                    4   9   2   16;
+                    4   9   16  32
+                
+                    4   9   32  64;
+                    4   9   64  128;
+                    
+                    4   9   128 256;    
+                    4   9   256 512;
+                
+                    4   9   512 1024;
+                    4   9   1024 1;
+                
+                    ];
+            end      
         end
     end
 end 
