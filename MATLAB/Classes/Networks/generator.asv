@@ -14,17 +14,18 @@ classdef generator < DeepNetwork
     end
 
     methods
-        function obj = generator(layersizes,WindowSize,Overlap,nSubsamples,BatchSize)
+        function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize)
              % constructor
 
              if isempty(layersizes)                             % if layersizes are unspecified
                  layersizes = generator.layersizes_generator;   % use default sizes
              end
 
-             obj.info.WindowSize    = WindowSize;       % Sample windowSize
-             obj.info.Overlap       = Overlap;          % Subsample overlap
-             obj.info.nSubsamples   = nSubsamples;      % No. subsamples     
-             obj.info.BatchSize     = BatchSize;        % Batch Size
+             obj.info.WindowSize            = WindowSize;           % Sample windowSize
+             obj.info.ExtrapolationLength   = ExtrapolationLength;  % Extrapolation length     
+             obj.info.Overlap               = Overlap;              % Subsample overlap
+             obj.info.nSubsamples           = nSubsamples;          % No. subsamples     
+             obj.info.BatchSize             = BatchSize;            % Batch Size
 
              obj.data               = get_data;         % read historical price data from file
 
@@ -43,7 +44,36 @@ classdef generator < DeepNetwork
         %
         %       Network & Layer Functions
 
-        function 
+        function [xdata,ydata] = get_trainingdata(obj,nSamples)
+            % function for generating training samples
+            
+            [xdata,ydata] = deal(cell(nSamples,1)); % empty cell arrays
+
+            xWin    = obj.info.WindowSize + (obj.info.nSubsamples-1)*(obj.info.WindowSize - obj.info.Overlap); % input size
+            xlocs   = [-xWin+1:0];                          % template xlocs
+            ylocs   = [1:obj.info.ExtrapolationLength];     % template ylocs                    
+            
+            locs = randi([xWin size(obj.data,1)-obj.info.ExtrapolationLength-1],[nSamples 1]);    % sampling locations
+            
+            for i = 1:nSamples                                                                  % loop through samples
+                xdata{i}        = obj.data(locs(i) + xlocs,5) - obj.data(locs(i) + xlocs,5);    % sample xdata as closing price - open price 
+
+                ydata{i}.x      = obj.scalinglayer(xdata{i});                                   % scale xsample before reweight & detrend
+                ydata{i}.x      = obj.reweight_detrend(obj.subsample_data(xdata{i}));           % generate reweighted & de-trended sample
+
+                ydata{i}.y      = obj
+            end
+            
+
+
+        end
+
+        function [xbatch,ybatch] = get_batch(obj,xdata,ydata)
+            % function for converting cell arrays of training data to dl,nD arrays on  gpu
+
+
+
+        end
         
         function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
             % function for computing generator and discriminator loss        

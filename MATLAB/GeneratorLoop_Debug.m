@@ -17,7 +17,7 @@ nSubsamples = 30;
 nSamples = 1e3;
 BatchSize = 48;
 
-gen = generator([],WindowSize,Overlap,nSubsamples,BatchSize);       % create generator object
-[xdata,ydata] = gen.get_trainingdata(nSamples);                     % generate samples for training
+gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize);       % create generator object
+[xdata,ydata] = gen.get_trainingdata(nSamples);                                         % generate samples for training
 
 

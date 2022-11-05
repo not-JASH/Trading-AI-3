@@ -14,17 +14,18 @@ classdef generator < DeepNetwork
     end
 
     methods
-        function obj = generator(layersizes,WindowSize,Overlap,nSubsamples,BatchSize)
+        function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize)
              % constructor
 
              if isempty(layersizes)                             % if layersizes are unspecified
                  layersizes = generator.layersizes_generator;   % use default sizes
              end
 
-             obj.info.WindowSize    = WindowSize;       % Sample windowSize
-             obj.info.Overlap       = Overlap;          % Subsample overlap
-             obj.info.nSubsamples   = nSubsamples;      % No. subsamples     
-             obj.info.BatchSize     = BatchSize;        % Batch Size
+             obj.info.WindowSize            = WindowSize;           % Sample windowSize
+             obj.info.ExtrapolationLength   = ExtrapolationLength;  % Extrapolation length     
+             obj.info.Overlap               = Overlap;              % Subsample overlap
+             obj.info.nSubsamples           = nSubsamples;          % No. subsamples     
+             obj.info.BatchSize             = BatchSize;            % Batch Size
 
              obj.data               = get_data;         % read historical price data from file
 
@@ -45,9 +46,28 @@ classdef generator < DeepNetwork
 
         function [xdata,ydata] = get_trainingdata(obj,nSamples)
             % function for generating training samples
-
             
+            [xdata,ydata] = deal(cell(nSamples,1)); % empty cell arrays
 
+            xWin    = obj.info.WindowSize + (obj.info.nSubsamples-1)*(obj.info.WindowSize - obj.info.Overlap); % input size
+            xlocs   = [-xWin+1:0];                          % template xlocs
+            ylocs   = [1:obj.info.ExtrapolationLength];     % template ylocs                    
+            
+            locs = randi([xWin size(obj.data,1)-obj.info.ExtrapolationLength-1],[nSamples 1]);    % sampling locations
+            
+            for i = 1:nSamples                                                                  % loop through samples
+                xdata{i}        = obj.data(locs(i) + xlocs,5) - obj.data(locs(i) + xlocs,2);    % sample xdata as closing price - open price 
+
+                ydata{i}.x      = scale_detrend_reweight(xdata{i});                             % scale, detrend, reweight xdata
+                ydata{i}.y      = obj.data(locs(i) + ylocs,5) - obj.data(locs(i) + ylocs,2);    % sample ydata as closing price - open price
+                ydata{i}.y_dt   = scale_detrend_reweight(ydata{i}.y);                           % scale, detrend, reweight ydata
+            end
+            
+            function y = scale_detrend_reweight(x)  
+                % function for scaling, reweighting and detrending data
+                y = obj.scalinglayer(x);        % scale data
+                y = obj.reweight_detrend(y);    % reweight and detrend data
+            end
         end
 
         function [xbatch,ybatch] = get_batch(obj,xdata,ydata)
