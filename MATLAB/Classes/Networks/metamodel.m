@@ -16,6 +16,11 @@ classdef metamodel < DeepNetwork
 
         end
 
+        function sizes = get_sizes(layertype,inputsize,outputsize,nblocks)
+            % abstract function for determining a possible set of sizes for a given layertype, which takes inputs of one size and returns
+            % outputs of another size. arguments are tentative, nblocks for now
+        end
+
         function layersizes = generator(obj)
 
 

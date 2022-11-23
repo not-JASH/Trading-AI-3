@@ -19,8 +19,14 @@ classdef discriminator < DeepNetwork
     end
 
     methods 
-        function obj = discriminator(LayerSizes,WindowSize)
+        function obj = discriminator(LayerSizes,WindowSize,learnrate)
             % constructor
+
+            obj = obj@DeepNetwork(learnrate); % call superclass constructor
+
+            if isempty(LayerSizes)                                          % if layersizes are unspecified 
+                LayerSizes = discriminator.layersizes_discriminator;        % use defaults
+            end
             
             obj.info.WindowSize = WindowSize;                                           % store windowsize in network's info
             
@@ -36,19 +42,21 @@ classdef discriminator < DeepNetwork
         function dly = predict(obj,dlx)
             % function for forward pass on discriminator
 
-            obj.debug_info("<strong>Prediction Layer</strong>",[]);                         % display active layer's name while in debug
+            obj.debug_info("<strong>Discriminator Prediction Layer</strong>",[]);           % display active layer's name while in debug
             
             dly = obj.waveletlayer(permute(dlx,[1 3 2]));                                   % wavelet transform input data
-            dly = cat(3,real(dly),imag(dly));
+            dly = permute(dly,[1 2 4 3]);           % permute dly such that third dimension is singleton
+            dly = cat(3,real(dly),imag(dly));       % split and concatenate real and imag values along third dimension
             
-            for i = 1:obj.info.PL.nBlocks                                                   % loop through blocks
-                dly = conv_maxpool(obj.dropout(dly),obj.weights.PL.blocks{i},@relu);        % convolution x2 + maxpool blocks
+            for i = 1:obj.info.PL.nBlocks                                                 % loop through blocks
+                dly = conv_maxpool(obj.dropout(dly),obj.weights.PL.blocks{i},@leakyrelu);   % convolution x2 + maxpool blocks
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
             end
 
-            dly = squeeze(dly);     % remove singleton dimension
+            dly = squeeze(sigmoid(dly));                            % remove singleton dimension
+            obj.debug_info("Discriminator output size: ",dly);      % display discriminator output size when in debug
 
             function dly = conv_maxpool(dlx,layer,activation)   
                 % function for convolution x2 + maxpool layer 

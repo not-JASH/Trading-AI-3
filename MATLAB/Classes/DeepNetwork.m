@@ -17,6 +17,17 @@ classdef DeepNetwork
     end
 
     methods
+        function obj = DeepNetwork(learnrate)
+            % superclass constructor
+
+            obj.info.avg_g = [];            % initialize average gradient for adam
+            obj.info.avg_sqg = [];          % initialize average squared gradient for adam
+            obj.info.settings.decay   = 1 - 1e-2;    % set default decay rate for adam
+            obj.info.settings.sqdecay = 1 - 1e-4;    % set default squared decay rate for adam
+            obj.info.settings.lr      = learnrate;   % set learnrate
+
+        end
+
          function debug_info(obj,message,item)
              % function for displaying debug info
 

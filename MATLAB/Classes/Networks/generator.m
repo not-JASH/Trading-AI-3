@@ -14,8 +14,10 @@ classdef generator < DeepNetwork
     end
 
     methods
-        function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize)
+        function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,learnrate)
              % constructor
+
+             obj = obj@DeepNetwork(learnrate); % call superclass constructor
 
              if isempty(layersizes)                             % if layersizes are unspecified
                  layersizes = generator.layersizes_generator;   % use default sizes
@@ -37,7 +39,6 @@ classdef generator < DeepNetwork
              [obj.weights.PL,obj.info.PL]       = obj.init_predictionlayer(layersizes.PL);              % Initialize prediction layer.
              [obj.weights.IDL,obj.info.IDL]     = obj.init_inversedetrendlayer(layersizes.IDL);         % Initialize inverse-detrend layer.
 %              [obj.weights.ISL,obj.info.ISL]     = obj.init_inversescalinglayer(layersizes.ISL);         % Initialize inverse-scaling layer.
-
         end
         
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -50,40 +51,83 @@ classdef generator < DeepNetwork
             [xdata,ydata] = deal(cell(nSamples,1)); % empty cell arrays
 
             xWin    = obj.info.WindowSize + (obj.info.nSubsamples-1)*(obj.info.WindowSize - obj.info.Overlap); % input size
-            xlocs   = [-xWin+1:0];                          % template xlocs
-            ylocs   = [1:obj.info.ExtrapolationLength];     % template ylocs                    
+            xlocs   = [-xWin+1:0];                                                  % template xlocs
+            ylocs   = [-obj.info.WindowSize+1:0]+obj.info.ExtrapolationLength;      % template ylocs                    
             
-            locs = randi([xWin size(obj.data,1)-obj.info.ExtrapolationLength-1],[nSamples 1]);    % sampling locations
+            locs = randi([xWin size(obj.data,1)-obj.info.ExtrapolationLength-1],[nSamples 1]);  % sampling locations
             
             for i = 1:nSamples                                                                  % loop through samples
                 xdata{i}        = obj.data(locs(i) + xlocs,5) - obj.data(locs(i) + xlocs,2);    % sample xdata as closing price - open price 
-
-                ydata{i}.x      = scale_detrend_reweight(xdata{i});                             % scale, detrend, reweight xdata
+                
+                ydata{i}.x      = scale_detrend_reweight(xdata{i},true);                        % subsample,scale, detrend, reweight xdata
                 ydata{i}.y      = obj.data(locs(i) + ylocs,5) - obj.data(locs(i) + ylocs,2);    % sample ydata as closing price - open price
-                ydata{i}.y_dt   = scale_detrend_reweight(ydata{i}.y);                           % scale, detrend, reweight ydata
+                ydata{i}.y_dt   = scale_detrend_reweight(ydata{i}.y,false);                     % scale, detrend, reweight ydata
             end
             
-            function y = scale_detrend_reweight(x)  
+            function y = scale_detrend_reweight(x,subsampleflag)  
                 % function for scaling, reweighting and detrending data
-                y = obj.scalinglayer(x);        % scale data
-                y = obj.reweight_detrend(y);    % reweight and detrend data
+                
+                y = obj.scalinglayer(x,false);                % scale data
+                y = obj.reweight_detrend(y,subsampleflag);    % reweight and detrend data
             end
         end
 
         function [xbatch,ybatch] = get_batch(obj,xdata,ydata)
             % function for converting cell arrays of training data to dl,nD arrays on  gpu
 
+            xbatch      = zeros([size(xdata{1}) obj.info.BatchSize],obj.DataType);          % initialize xbatch
+            ybatch.x    = zeros([size(ydata{1}.x) obj.info.BatchSize],obj.DataType);        % initialize ydata.x 
+            ybatch.y    = zeros([size(ydata{1}.y) obj.info.BatchSize],obj.DataType);        % initialize ydata.y
+            ybatch.y_dt = zeros([size(ydata{1}.y_dt) obj.info.BatchSize],obj.DataType);     % initialize ydata.y_dt
 
+            for i = 1:obj.info.BatchSize
 
+                xbatch(:,i)         = xdata{i};             % load xdata into array
+                ybatch.x(:,:,i)     = ydata{i}.x;           % load subsampled, reweighted, and detrended data into array
+                ybatch.y(:,i)       = ydata{i}.y;           % load reference output into array
+                ybatch.y_dt(:,i)    = ydata{i}.y_dt;        % load scaled, reweighted, detrended reference output into array
+            end
+
+            xbatch      = gpudl(xbatch,'');         % make xbatch a traced dl array and load onto gpu memory
+            ybatch.x    = gpudl(ybatch.x,'');       % make ybatch.x a traced dl array and load onto gpu memory
+            ybatch.y    = gpudl(ybatch.y,'');       % make ybatch.y a traced dl array and load onto gpu memory
+            ybatch.y_dt = gpudl(ybatch.y_dt,'');    % make ybatch.y_dt a traced dl array and load onto gpu memory
+        end
+
+        function [grad_gen,grad_disc] = model_gradients(obj,xbatch,ybatch,disc,disc_weights,gen_weights)
+            % function for calculating model gradients and updating weights
+            
+            [gen_loss,disc_loss] = obj.compute_losses(xbatch,ybatch,disc);      % compute losses for generator and discriminator
+
+            grad_gen = dlgradient(gen_loss,gen_weights,'RetainData',true);      % compute generator gradient
+            grad_disc = dlgradient(disc_loss,disc_weights);                     % compute discriminator gradient
+        end
+
+        function [obj,disc] = update_weights(obj,grad_gen,grad_disc,disc,iter)
+            % function for updating model weights 
+
+            [obj.weights,obj.info.avg_g,obj.info.avg_sqg] = ...                                     % update generator parameters with adam
+                adamupdate(obj.weights,grad_gen,obj.info.avg_g,obj.info.avg_sqg,...                 % input weights, generator gradient, average gradient, average squared gradient
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);      % iteration, generator learn rate, decay, squared decay
+
+            [disc.weights,disc.info.avg_g,disc.info.avg_sqg] = ...                                  % update discriminator parameters with adam
+                adamupdate(disc.weights,grad_disc,disc.info.avg_g,disc.info.avg_sqg,...             % input weights, generator gradient, average gradient, average squared gradient
+                iter,disc.info.settings.lr,disc.info.settings.decay,disc.info.settings.sqdecay);   % iteration, generator learn rate, decay, squared decay
         end
         
         function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
             % function for computing generator and discriminator loss        
 
-            [dly,dlx_rwdt,dly_pl] = obj.predict(xbatch,xhatbatch);     % feed forward through generator [re-trended output, de-trended & re-weighed input, prediction layer output] 
+            if obj.IsTraining                                                           % if network is training
+                xhatbatch = inject_noise(xbatch(end-obj.info.WindowSize+1:end,:,:));    % use final sample of x + noise as prediction
+            else
 
-            yes = disc.predict(outputs.y_dt,inject_noise(outputs.y));       % determine discriminator output on real samples
-            no  = disc.predict(dly);                                        % determine discriminator output on predicted samples
+            end
+
+            [dly,dlx_rwdt,dly_pl] = obj.predict(xbatch,xhatbatch);     % feed forward through generator [re-trended output, de-trended & re-weighed input, prediction layer output] 
+            
+            yes = disc.predict(outputs.y_dt);           % determine discriminator output on real samples
+            no  = disc.predict(permute(dly,[1 3 2]));   % determine discriminator output on predicted samples, permute dly such that second dimension is singleton
 
             rwdt_loss           = compute_reweight_detrend_loss(dlx_rwdt,outputs.x);       % compute reweight-detrend layer loss
             prediction_loss     = compute_prediction_loss(dly_pl,outputs.y_dt);            % compute prediction layer loss
@@ -102,33 +146,45 @@ classdef generator < DeepNetwork
 
             function loss = compute_prediction_loss(dly,y)
                 % function for computing prediction layer loss
-
-                loss = huber(dly,dlarray(y,''),'DataFormat','TB');      % compute smooth L1 between prediction layer output and detrended output samples
+                
+                loss = huber(dly,squeeze(y),'DataFormat','TB');     % compute smooth L1 between prediction layer output and detrended output samples
             end
 
             function loss = compute_retrend_loss(dly,y)
                 % function for computing retrend-layer loss
                 
-                loss = huber(dly,dlarray(y,''),'DataFormat','TB');      % compute smooth L1 between retrend layer output and expected output samples
+                loss = huber(dly,squeeze(y),'DataFormat','TB');      % compute smooth L1 between retrend layer output and expected output samples
             end
         end
 
-        function y = reweight_detrend(obj,x)
+        function y = reweight_detrend(obj,x,subsampleflag)
             % function for generating reweighted-detrended samples 
             % where x is a two dimensional array TB 
-
-            x = huber_reweight(obj.subsample(x));       % subsample and reweight x 
-            y = obj.waveletlayer(x);                    % obtain the waveletlayer output of x
-            y = inverse_waveletlayer(y);                % inverse wavelet layer y
             
-            function xbatch = huber_reweight(xbatch)
-                % function for reweighting xbatch with huber weigh function
-                % xbatch is in format TB
+            if subsampleflag            % if sample should be subsampled
+                x = subsample(x);       % subsample
+            end
 
+            x = huber_reweight(x);                                      % subsample and reweight x 
+            y = obj.waveletlayer(x);                                    % obtain the waveletlayer output of x
+            y = inverse_waveletlayer(y,zeros(size(x),obj.DataType));    % inverse wavelet layer y
+            
+            function y = inverse_waveletlayer(x,y)
+                % function for recovering signal from cwt of signal
+                
+                for i = 1:size(x,3)                 % loop through subsamples
+                    y(:,i) = icwt(x(:,:,i));        % inverse continous wavelet transform
+                end
+            end
+
+            function xbatch = huber_reweight(xbatch)
+                % function for reweighting xbatch with huber weight function
+                % xbatch is in format TC
+                
                 sf  = mad(xbatch,1,1)/0.6745;               % compute scale factor as median absolute deviation divided by 0.6745
                 r   = abs(xbatch - median(xbatch,1))/sf;    % compute residual as abs delta x - median(x) divided by sf
 
-                w = huber_weight(r,1,547);      % get huber weights
+                w = huber_weight(r,1.547);      % get huber weights
                 xbatch = w.*xbatch;             % reweight samples
             end
 
@@ -142,6 +198,18 @@ classdef generator < DeepNetwork
                     weights(~gtc,i) = c(i)/x(~gtc,i);      % otherwise weights = c/x
                 end                 
             end
+
+            function x1 = subsample(x)
+                % function specific function for subsampling x : handles one sample at a time
+
+                x1 = zeros([obj.info.WindowSize obj.info.nSubsamples],obj.DataType);    % initialize subsampled x as zeros
+                sslocs = [1:obj.info.WindowSize];                                       % init subsampling locs
+
+                for i = 1:obj.info.nSubsamples
+                    x1(:,i) = x(sslocs);                                        % subsample x
+                    sslocs = sslocs + (obj.info.WindowSize - obj.info.Overlap); % increment locs
+                end              
+            end
         end
 
         function [dly,varargout] = predict(obj,x,varargin)
@@ -153,7 +221,7 @@ classdef generator < DeepNetwork
                 xhat = obj.previous_estimate;
             end
             
-            [x,ScaleFactor]                     = obj.scalinglayer(x);                                              % Scale input data 
+            [x,ScaleFactor]                     = obj.scalinglayer(x,false);                                        % Scale input data and load onto gpu
             dlx                                 = obj.subsample_data(x);                                            % Subsample data
             [dlx,ReweightDetrendInfo]           = obj.reweightdetrendlayer(dlx);                                    % Reweight and detrend subsampled data.
             dly_set                             = obj.waveletlayer(dlx);                                            % Wavelet transform dataset.
@@ -180,14 +248,10 @@ classdef generator < DeepNetwork
 
         function dlx = subsample_data(obj,x)
             % function for subsampling and rearranging scaled data
-            persistent set
 
             obj.debug_info("<strong>Subsampling Layer</strong>",[]);        % display active layer's name while in debug
             
-            if isempty(set)                                                 % if persistent variable is empty initialize set as zeros
-                set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples obj.info.BatchSize],obj.DataType),'');           % [ws nsubsamples batchsize]
-                %       [windowsize nsumbsamples batchsize] TCB
-            end
+            set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples obj.info.BatchSize],obj.DataType),'');           % [ws nsubsamples batchsize] TCB
             
             locs = [1:obj.info.WindowSize];                                 % Initialize locs 
             for i = 1:obj.info.nSubsamples                                  % Loop through subsamples
@@ -198,14 +262,19 @@ classdef generator < DeepNetwork
             obj.debug_info("Reshaped Data Sizes: ",dlx);                    % display output's dimensions while in debug    [TCB]
         end
 
-        function [dly,ScaleFactor] = scalinglayer(obj,x)
+        function [dly,ScaleFactor] = scalinglayer(obj,x,gpuload)
             % layer for scaling and subsampling input data
 
-            obj.debug_info("<strong>Scaling Layer</strong>",[]);                    % display active layer's name while in debug
+            obj.debug_info("<strong>Scaling Layer</strong>",[]);    % display active layer's name while in debug
 
-            ScaleFactor = range(abs(x),1);                                          % scale input data by the range of its absolute values
-            dly = gpudl(x./ScaleFactor,'');                                         %
-            obj.debug_info("Scaled Data Sizes: ",dly);                              % display output's dimensions while in debug
+            ScaleFactor = range(abs(x),1);                          % scale input data by the range of its absolute values
+            dly = x./ScaleFactor;                                   % 
+
+            if gpuload                      % if gpu loading flag
+                dly = gpudl(dly,'');        % make dly a traced dl array and load onto gpu
+            end
+
+            obj.debug_info("Scaled Data Sizes: ",dly);                % display output's dimensions while in debug
         end
 
         function [dly,info] = reweightdetrendlayer(obj,dlx)
@@ -252,10 +321,9 @@ classdef generator < DeepNetwork
 
                 obj.debug_info("<strong>Detrend Decoder</strong>",[]);                                  % display active layer's name while in debug
 
-
                 DetrendValues = info;
                 for i = 1:obj.info.RDL.DD.nBlocks                                                       % loop through layers
-                    DetrendValues = decoder_block(DetrendValues,layer.blocks{i},@tanh);                    % decoder block tanh activation
+                    DetrendValues = decoder_block(DetrendValues,layer.blocks{i},@tanh);                 % decoder block tanh activation
 
                     debug_message = append("Output size after ",num2str(i)," iterations ");             % debug message
                     obj.debug_info(debug_message,DetrendValues);                                        % display layer output size 
@@ -273,7 +341,6 @@ classdef generator < DeepNetwork
 
                 dly = obj.maxpoollayer(dly,[9],'Stride',[1],'DataFormat','SCB');       % max pooling layer
                 dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SCB');            % batch normalization layer
-
 
             end
 
@@ -341,6 +408,7 @@ classdef generator < DeepNetwork
 
             dlx = permute(dlx,[1 3 2]);         % Estimate is in the format TB, permute such that dimensions are TCB (1 Channel)
             dly = obj.waveletlayer(dlx);        % Wavelet transform the batch of estimates
+            dly = permute(dly,[1 2 4 3]);       % rearrange dly such that third dimension is singleton
             dly = cat(3,real(dly),imag(dly));   % split dly into real and complex parts
 
             for i = 1:obj.info.EEL.nBlocks                                                          % loop through blocks
@@ -422,14 +490,14 @@ classdef generator < DeepNetwork
             
             dly = DetrendInfo;                                                              % set dly as detrend info from reweight-detrend layer
                 
-            for i = 1:obj.info.IDL.nBlocks                                                   % loop through blocks
-                dly = idetrend_block(obj.dropout(dly),obj.weights.IDL.blocks{i},@tanh);      % inverse-detrend block
+            for i = 1:obj.info.IDL.nBlocks                                                  % loop through blocks
+                dly = idetrend_block(obj.dropout(dly),obj.weights.IDL.blocks{i},@tanh);     % inverse-detrend block
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
             end
-
-            dly = squeeze(dlx + dly);            % retrend dlx
+                
+            dly = dlx + squeeze(dly);            % retrend dlx
 
             function dly = idetrend_block(dlx,layer,activation)
                 % function for detrend block
