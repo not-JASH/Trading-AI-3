@@ -13,9 +13,10 @@ WindowSize = 80;
 ExtrapolationLength = 15;
 Overlap = 20;
 nSubsamples = 64;
+nEvalSamples = 4;
 
 nSamples = 1e3;
-BatchSize = 48;
+BatchSize = 30;
 
 [lrg,lrd] = deal(3e-3);     % set generator and discriminator learn rates
 
@@ -68,7 +69,12 @@ while true                                                                      
             end
 
             % evaluate performance after iteration
-
+            eval_locs = randi(nSamples,[nEvalSamples 1]);                                   % evaluate performance on n samples
+            [eval_x,eval_y] = gen.get_batch(xdata(eval_locs),ydata(eval_locs));             % generate batch for evaluation
+    
+            eval_dly = gen.predict(eval_x,inject_noise(eval_x(end-WindowSize+1,:,:)));      % predict with evaluation sample
+            eval_y = eval_y.y;                                                              % discard extra data
+               
             spmdBarrier;                            % pause execution until other workers have generated samples
             locs = [1:wSamples];                    % initialize locs up to wSamples
             for i = 2:nWorkers                      % loop through workers
@@ -84,4 +90,23 @@ while true                                                                      
             spmdSend(ydata,1,2);                    % send ydata to worker 1
         end
     end
+
+    eval_prediction = gatext(eval_dly{1});  % extract data from composite arrays
+    eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
+
+    for i = 1:nEvalSamples                      % loop through evaluation samples
+        subplot(nEvalSamples,1,i)               % plot each sample on a separate subplot
+        yyaxis left                             % on left axis
+        plot(eval_reference(:,i));              % plot reference sample
+        yyaxis right                            % on right axis 
+        plot(eval_prediction(:,i));             % plot predicted output
+    end
+    f = getframe;
+    
+    iteration_time = toc;                           % how long did this iteration take
+    total_time = iteration_time + total_time;       % add iteration time to total time
+    [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
+    fprintf("Iteration %d Complete, Time Elapsed: %.2f s\n",iter,iteration_time);   % display iteration info
+    fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
+    iter = iter+1;  % increment iteration
 end

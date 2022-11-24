@@ -17,7 +17,7 @@ classdef generator < DeepNetwork
         function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,learnrate)
              % constructor
 
-             obj = obj@DeepNetwork(learnrate); % call superclass constructor
+             obj = obj@DeepNetwork(learnrate);  % call superclass constructor
 
              if isempty(layersizes)                             % if layersizes are unspecified
                  layersizes = generator.layersizes_generator;   % use default sizes
@@ -61,7 +61,8 @@ classdef generator < DeepNetwork
                 
                 ydata{i}.x      = scale_detrend_reweight(xdata{i},true);                        % subsample,scale, detrend, reweight xdata
                 ydata{i}.y      = obj.data(locs(i) + ylocs,5) - obj.data(locs(i) + ylocs,2);    % sample ydata as closing price - open price
-                ydata{i}.y_dt   = scale_detrend_reweight(ydata{i}.y,false);                     % scale, detrend, reweight ydata
+                ydata{i}.y      = obj.scalinglayer(ydata{i}.y,'');                              % scale ydata
+                ydata{i}.y_dt   = obj.reweight_detrend(ydata{i}.y,false);                       % detrend, reweight ydata
             end
             
             function y = scale_detrend_reweight(x,subsampleflag)  
@@ -75,12 +76,14 @@ classdef generator < DeepNetwork
         function [xbatch,ybatch] = get_batch(obj,xdata,ydata)
             % function for converting cell arrays of training data to dl,nD arrays on  gpu
 
-            xbatch      = zeros([size(xdata{1}) obj.info.BatchSize],obj.DataType);          % initialize xbatch
-            ybatch.x    = zeros([size(ydata{1}.x) obj.info.BatchSize],obj.DataType);        % initialize ydata.x 
-            ybatch.y    = zeros([size(ydata{1}.y) obj.info.BatchSize],obj.DataType);        % initialize ydata.y
-            ybatch.y_dt = zeros([size(ydata{1}.y_dt) obj.info.BatchSize],obj.DataType);     % initialize ydata.y_dt
+            batchsize = length(xdata);
 
-            for i = 1:obj.info.BatchSize
+            xbatch      = zeros([size(xdata{1}) batchsize],obj.DataType);          % initialize xbatch
+            ybatch.x    = zeros([size(ydata{1}.x) batchsize],obj.DataType);        % initialize ydata.x 
+            ybatch.y    = zeros([size(ydata{1}.y) batchsize],obj.DataType);        % initialize ydata.y
+            ybatch.y_dt = zeros([size(ydata{1}.y_dt) batchsize],obj.DataType);     % initialize ydata.y_dt
+
+            for i = 1:batchsize
 
                 xbatch(:,i)         = xdata{i};             % load xdata into array
                 ybatch.x(:,:,i)     = ydata{i}.x;           % load subsampled, reweighted, and detrended data into array
@@ -108,11 +111,11 @@ classdef generator < DeepNetwork
 
             [obj.weights,obj.info.avg_g,obj.info.avg_sqg] = ...                                     % update generator parameters with adam
                 adamupdate(obj.weights,grad_gen,obj.info.avg_g,obj.info.avg_sqg,...                 % input weights, generator gradient, average gradient, average squared gradient
-                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);      % iteration, generator learn rate, decay, squared decay
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);       % iteration, generator learn rate, decay, squared decay
 
             [disc.weights,disc.info.avg_g,disc.info.avg_sqg] = ...                                  % update discriminator parameters with adam
                 adamupdate(disc.weights,grad_disc,disc.info.avg_g,disc.info.avg_sqg,...             % input weights, generator gradient, average gradient, average squared gradient
-                iter,disc.info.settings.lr,disc.info.settings.decay,disc.info.settings.sqdecay);   % iteration, generator learn rate, decay, squared decay
+                iter,disc.info.settings.lr,disc.info.settings.decay,disc.info.settings.sqdecay);    % iteration, generator learn rate, decay, squared decay
         end
         
         function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
@@ -153,7 +156,7 @@ classdef generator < DeepNetwork
             function loss = compute_retrend_loss(dly,y)
                 % function for computing retrend-layer loss
                 
-                loss = huber(dly,squeeze(y),'DataFormat','TB');      % compute smooth L1 between retrend layer output and expected output samples
+                loss = huber(dly,squeeze(y),'DataFormat','TB');     % compute smooth L1 between retrend layer output and expected output samples
             end
         end
 
@@ -168,9 +171,20 @@ classdef generator < DeepNetwork
             x = huber_reweight(x);                                      % subsample and reweight x 
             y = obj.waveletlayer(x);                                    % obtain the waveletlayer output of x
             y = inverse_waveletlayer(y,zeros(size(x),obj.DataType));    % inverse wavelet layer y
-            
+
+            % Hotfix -> if sample created NaN or Inf, ignore detrend operation
+            if all(isnan(y),'all');y=x;end
+
             function y = inverse_waveletlayer(x,y)
                 % function for recovering signal from cwt of signal
+                
+                % HOTFIX -> Some samples were creating NaN and Inf values 
+                try
+                    validateattributes(x,"numeric","finite");
+                catch
+                    y = NaN;
+                    return
+                end
                 
                 for i = 1:size(x,3)                 % loop through subsamples
                     y(:,i) = icwt(x(:,:,i));        % inverse continous wavelet transform
@@ -251,7 +265,8 @@ classdef generator < DeepNetwork
 
             obj.debug_info("<strong>Subsampling Layer</strong>",[]);        % display active layer's name while in debug
             
-            set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples obj.info.BatchSize],obj.DataType),'');           % [ws nsubsamples batchsize] TCB
+            batchsize = size(x,3);
+            set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples batchsize],obj.DataType),'');           % [ws nsubsamples batchsize] TCB
             
             locs = [1:obj.info.WindowSize];                                 % Initialize locs 
             for i = 1:obj.info.nSubsamples                                  % Loop through subsamples
@@ -438,9 +453,10 @@ classdef generator < DeepNetwork
             % layer for predicting signal from encoded data
 
             obj.debug_info("<strong>Prediction Layer</strong>",[]);                           % display active layer's name while in debug
-
-            dly = dlx_set;
             
+            dly = dlx_set;
+            batchsize = size(dly,4);
+
             for i = 1:obj.info.PL.nBlocks2D                                                     % loop through blocks
                 dly = prediction_block2D(obj.dropout(dly),obj.weights.PL.blocks2D{i},@tanh);    % prediction decoder blocks
                 
@@ -450,7 +466,7 @@ classdef generator < DeepNetwork
 
             dly = obj.batchnormlayer(obj.dropout(dly+dlx_estimate),obj.weights.PL.bn1,...       % combine set and estimate data
                 'DataFormat','SSCB');  
-            dly = reshape(dly,obj.info.WindowSize,[],obj.info.BatchSize);                       % reshape output 
+            dly = reshape(dly,obj.info.WindowSize,[],batchsize);                                % reshape output 
             obj.debug_info("Output size after reshape : ",dly);                                 % display output size
 
             for i = 1:obj.info.PL.nBlocks1D                                                     % loop through 1D blocks
@@ -747,16 +763,16 @@ classdef generator < DeepNetwork
                 % function for set encoder layer sizes
 
                 layersizes  = [             % Set Encoding Layer
-                    4   9   7   2   16;
+                    4   9   7   2   8;
+                    4   9   7   8  16;
+                
                     4   9   7   16  32;
-                
                     4   9   7   32  64;
-                    4   9   7   64  128;
                 
+                    4   7   5   64  128;
                     4   7   5   128  256;
-                    4   7   5   256  512;
                 
-                    3   5   3   512 512;
+                    3   5   3   256 512;
                     2   5   3   512 512;
                     ];  
             end
