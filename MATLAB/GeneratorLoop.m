@@ -26,7 +26,7 @@ wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker wi
 
 %% Initialize networks and training data on workers
 
-spmd                                                                    % start spmd block
+spmd                                                                    % start spmd block  
     if spmdIndex == 1                                                   % if worker id = 1
         gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
         disc = discriminator([],WindowSize,lrd);                        % init discriminator
@@ -95,11 +95,11 @@ while true                                                                      
     eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
 
     for i = 1:nEvalSamples                      % loop through evaluation samples
-        subplot(nEvalSamples,1,i)               % plot each sample on a separate subplot
-        yyaxis left                             % on left axis
+        subplot(nEvalSamples,1,i)               % plot each sample on a separate subplot                          
         plot(eval_reference(:,i));              % plot reference sample
-        yyaxis right                            % on right axis 
+        hold on 
         plot(eval_prediction(:,i));             % plot predicted output
+        hold off
     end
     f = getframe;
     

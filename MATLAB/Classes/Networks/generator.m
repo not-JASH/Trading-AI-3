@@ -513,8 +513,9 @@ classdef generator < DeepNetwork
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
             end
                 
-            dly = dlx + squeeze(dly);            % retrend dlx
-
+            dly = obj.batchnormlayer(permute(dlx,[1 3 2])+dly,obj.weights.IDL.bn1,'DataFormat','SCB');      % retrend dlx and scale
+            dly = squeeze(dly);                                                                             % remove singleton dimension
+    
             function dly = idetrend_block(dlx,layer,activation)
                 % function for detrend block
 
@@ -692,6 +693,8 @@ classdef generator < DeepNetwork
                 layer.blocks{i} = init_inversedetrendblock(layersizes(i,:));        % init blokcs
             end
 
+            layer.bn1 = obj.init_batchnormlayer(1,obj.DataType);    % init batchnorm for retrend operation
+
             function layer = init_inversedetrendblock(ls)
                 % function for initializing inverse detrend block
 
@@ -770,10 +773,10 @@ classdef generator < DeepNetwork
                     4   9   7   32  64;
                 
                     4   7   5   64  128;
-                    4   7   5   128  256;
+                    4   7   5   128  128;
                 
-                    3   5   3   256 512;
-                    2   5   3   512 512;
+                    3   5   3   128 128;
+                    2   5   3   128 512;
                     ];  
             end
 
