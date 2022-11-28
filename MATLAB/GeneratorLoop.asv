@@ -109,12 +109,20 @@ while true                                                                      
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
     
     
-    if rem(iter,50) == 0                                                                            % every n iterations
-        checkpointsave_generator = gen{1};                                                          % extract generator from parallel pool  
-        checkpointsave_discriminator = disc{1};                                                     % extract discriminator from parallel pool
+    if rem(iter,50) == 0
+        checkpointsave_generator = gen{1};
+        checkpointsave_discriminator = disc{1};
 
-        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator");       % save generator and discriminator
-    end
-
+        save("checkpointsave.mat",)
+    
+    
+    
+    
+    
+    
     iter = iter+1;  % increment iteration
+
+
+
+
 end
