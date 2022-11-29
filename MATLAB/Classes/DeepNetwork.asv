@@ -81,23 +81,23 @@ classdef DeepNetwork
 
             assert(length(stride)==length(fs),"stride must have the same dimensionality as fs");
             assert(length(is) == length(fs)+1,"input size must be the same as filter size plus one dimension for channels")
+%             nci = size(is,length(is));
 
-            dimensionality  = length(fs);               % determine dimensionality of input
+            dimensionality  = ndims(fs);                % determine dimensionality of input
             output_size     = zeros(1,dimensionality);  % init output_size as zeros
             padding         = zeros(dimensionality,2);  % init padding as zeros
             
             if ~isempty(varargin)                       % if padding values were input
-                for i = 1:nargin-4                      % loop through varargin
+                for i = 1:nargin-3                      % loop through varargin
                     padding(i,:) = varargin{i};         % store padding values in matrix
                 end
             end
 
             for i = 1:dimensionality
-                output_size(i) = 1 + floor((is(i) + sum(padding(i,:)) - fs(i))/stride(i)); % calculate output size of ith dimension
+                output_size(i) = 1 + (is(i) + sum(padding(i,:)) - fs(i))/stride(i); % calculate output size of ith dimension
             end
 
             output_size = [output_size,nco];    % append number of output channels to output_size
-            assert(all(output_size)>0,"Dimension error. Output size is invalid");
         end
 
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -135,31 +135,6 @@ classdef DeepNetwork
         function dly = transposedconvlayer(dlx,layer,varargin)
             % transposed convolution layer
             dly = dltranspconv(dlx,layer.w,layer.b,varargin{:});    % transposed convolution
-        end
-
-        function output_size = transposedconvoutputsize(fs,is,nco,stride,varargin)
-            % function for calculating output dimensions of transposed convolution (and grouped transposed convolution) layers
-            
-            assert(length(stride)==length(fs),"stride must have the same dimensionality as fs");
-            assert(length(is) == length(fs)+1,"input size must be the same as filter size plus one dimension for channels");
-
-            dimensionality  = length(fs);               % determine dimensionality of input
-            output_size     = zeros(1,dimensionality);  % init output_size as zeros
-            cropping         = 'valid';                 % default to no cropping
-
-            if ~isempty(varargin)                       % if cropping is specified, and set to same
-                if strcmp(varargin{1},'same')           % change the value
-                    cropping = 'same';
-                end
-            end
-
-            for i = 1:dimensionality                                % loop through sample dimensions
-                if strcmp(cropping,'valid')
-                    output_size(i) = (is(i)-1)*stride(i) + fs(i);   % output size if cropping is valid (none)
-                elseif strcmp(cropping,'same')
-                    output_size(i) = is(i)*stride(i);               % output size if cropping is same -> ignore specific cropping sizes 
-                end
-            end               
         end
 
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -221,10 +196,14 @@ classdef DeepNetwork
             % function for determining a maxpooling layer's outputsize
 
             assert(length(inputsize) == length(poolsize)+1,"inputsize must have one more dimension than poolsize (for channels)");
-            
-            nci = inputsize(end); % determine number of channels in data 
+             
 
-            outputsize = DeepNetwork.convoutputsize(poolsize,inputsize,nci,stride,varargin{:}); % the only difference between this output size and conv output size is nchannelsout = nchannels in 
+            dimensi
+
+
+
+
+
 
         end
 

@@ -102,7 +102,7 @@ InputSize = nSubsamples*(WindowSize-Overlap) + WindowSize;
 
 % Initialize Networks
 
-Generator = generator(layersizes,WindowSize,Overlap,nSubsamples,BatchSize);
+Generator = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,1e-3);
 [~,total_params] = DeepNetwork.struct_tree2cell(Generator.weights);
 display_number("Total Params:",total_params);
 Generator.Debug = true;

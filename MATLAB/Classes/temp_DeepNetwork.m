@@ -5,8 +5,7 @@
         October 2022
 %}
 
-
-classdef DeepNetwork
+classdef temp_DeepNetwork
     properties
         DataType = 'single';        %   Network Datatype
         IsTraining = true;          %   Boolean denoting if network is training
@@ -17,7 +16,7 @@ classdef DeepNetwork
     end
 
     methods
-        function obj = DeepNetwork(learnrate)
+        function obj = temp_DeepNetwork(learnrate)
             % superclass constructor
 
             obj.info.avg_g = [];            % initialize average gradient for adam
@@ -159,7 +158,9 @@ classdef DeepNetwork
                 elseif strcmp(cropping,'same')
                     output_size(i) = is(i)*stride(i);               % output size if cropping is same -> ignore specific cropping sizes 
                 end
-            end               
+            end       
+
+            output_size = [output_size,nco];    % append number of output channels to output_size
         end
 
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

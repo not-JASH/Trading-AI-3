@@ -138,8 +138,8 @@ classdef metamodel < temp_DeepNetwork
             detrend_decoder = obj.init_layerinfo({'tconv'},metaparams.DD);  % init layerinfo array for detrend decoder
 
             outputsize = obj.get_blockoutputsize(detrend_decoder,detrendinfosize);  % get outputsize for detrend decoder
-            
-            assert(all(size(inputsize) == size(outputsize)),"detrended prediction must be the same size as detrend decoder output");
+            outputsiz
+
 
         end
 

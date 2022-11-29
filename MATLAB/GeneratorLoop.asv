@@ -27,8 +27,9 @@ wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker wi
 
 spmd                                                                    % start spmd block  
     if spmdIndex == 1                                                   % if worker id = 1
-        gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
-        disc = discriminator([],WindowSize,lrd);                        % init discriminator
+%         gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
+%         disc = discriminator([],WindowSize,lrd);                    % init discriminator
+        
         spmdBroadcast(1,gen.weightless_copy);                           % broadcast weightless copy of generator to workers
         [xdata,ydata] = deal(cell(nSamples,1));                         % init xdata and ydata as empty cell arrays
         locs = [1:wSamples];                                            % locs for storing x and y data from workers
@@ -48,8 +49,8 @@ end
 
 %% Training Loop 
 
-iter = 1;               % start counting iterations at zero
-total_time = 0;         % set timers to zero
+% iter = 1;               % start counting iterations at zero
+% total_time = 0;         % set timers to zero
 iteration_time = 0;     %
 
 while true                                                                                  % open training loop
@@ -94,11 +95,16 @@ while true                                                                      
     eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
 
     for i = 1:nEvalSamples                      % loop through evaluation samples
-        subplot(nEvalSamples,1,i)               % plot each sample on a separate subplot                          
+        subplot(nEvalSamples,2,2*i-1)           % plot each sample on a separate subplot                          
         plot(eval_reference(:,i));              % plot reference sample
         hold on 
-        plot(eval_prediction(:,i));             % plot predicted output
+        plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
         hold off
+
+        subplot(nEvalSamples,2,2*i)             
+        plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
+        hold on 
+        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot 
     end
     f = getframe;
     
@@ -109,20 +115,12 @@ while true                                                                      
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
     
     
-    if rem(iter,50) == 0
-        checkpointsave_generator = gen{1};
-        checkpointsave_discriminator = disc{1};
+    if rem(iter,50) == 0                                                                            % every n iterations
+        checkpointsave_generator = gen{1};                                                          % extract generator from parallel pool  
+        checkpointsave_discriminator = disc{1};                                                     % extract discriminator from parallel pool
 
-        save("checkpointsave.mat",)
-    
-    
-    
-    
-    
-    
+        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","iter","total_time");       % save generator, discriminator, iter, and total_time
+    end
+
     iter = iter+1;  % increment iteration
-
-
-
-
 end

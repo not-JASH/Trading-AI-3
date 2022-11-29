@@ -1,0 +1,33 @@
+%{
+        Proof of Concept 3
+
+        Jashua Luna
+        November 2022
+
+        Random Stochastic Systems
+%}
+
+
+
+nobservations = 1e3;
+
+ncomponents = 10;
+
+components = cell(ncomponents,1);
+
+for i = 1:ncomponents
+    components{i}.mu = 5*rand(1,1);
+    components{i}.sig = 5*rand(1,1);
+end
+
+observations = zeros(nobservations,1);
+
+for i = 1:nobservations
+    observations(i) = normrnd(components{1}.mu,components{1}.sig);
+    for j = 2:ncomponents
+        observations(i) = observations(i) + 
+
+
+    end
+end
+

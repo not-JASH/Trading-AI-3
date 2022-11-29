@@ -10,7 +10,7 @@ nWorkers = gcp('nocreate').NumWorkers;              % store worker count
 
 % training parameters
 WindowSize = 80;
-ExtrapolationLength = 15;
+ExtrapolationLength = 30;
 Overlap = 20;
 nSubsamples = 64;
 nEvalSamples = 4;
@@ -18,7 +18,7 @@ nEvalSamples = 4;
 nSamples = 1e3;
 BatchSize = 30;
 
-[lrg,lrd] = deal(3e-3);     % set generator and discriminator learn rates
+[lrg,lrd] = deal(9e-3);     % set generator and discriminator learn rates
 
 assert(rem(nSamples,nWorkers-1)==0,"nworkers-1 must be a factor of nsamples\n");
 wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker will generate
@@ -27,8 +27,9 @@ wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker wi
 
 spmd                                                                    % start spmd block  
     if spmdIndex == 1                                                   % if worker id = 1
-        gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
-        disc = discriminator([],WindowSize,lrd);                        % init discriminator
+%         gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
+%         disc = discriminator([],WindowSize,lrd);                    % init discriminator
+        
         spmdBroadcast(1,gen.weightless_copy);                           % broadcast weightless copy of generator to workers
         [xdata,ydata] = deal(cell(nSamples,1));                         % init xdata and ydata as empty cell arrays
         locs = [1:wSamples];                                            % locs for storing x and y data from workers
@@ -48,8 +49,8 @@ end
 
 %% Training Loop 
 
-iter = 1;               % start counting iterations at zero
-total_time = 0;         % set timers to zero
+% iter = 1;               % start counting iterations at zero
+% total_time = 0;         % set timers to zero
 iteration_time = 0;     %
 
 while true                                                                                  % open training loop
@@ -94,11 +95,19 @@ while true                                                                      
     eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
 
     for i = 1:nEvalSamples                      % loop through evaluation samples
-        subplot(nEvalSamples,1,i)               % plot each sample on a separate subplot                          
+        subplot(nEvalSamples,2,2*i-1)           % plot each sample on a separate subplot                          
         plot(eval_reference(:,i));              % plot reference sample
         hold on 
-        plot(eval_prediction(:,i));             % plot predicted output
+        plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
         hold off
+        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
+
+        subplot(nEvalSamples,2,2*i)             
+        plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
+        hold on 
+        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot cumulative sum of scaled predicted output
+        hold off
+        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
     end
     f = getframe;
     
@@ -113,7 +122,7 @@ while true                                                                      
         checkpointsave_generator = gen{1};                                                          % extract generator from parallel pool  
         checkpointsave_discriminator = disc{1};                                                     % extract discriminator from parallel pool
 
-        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator");       % save generator and discriminator
+        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","iter","total_time");       % save generator, discriminator, iter, and total_time
     end
 
     iter = iter+1;  % increment iteration
