@@ -146,6 +146,90 @@ classdef metamodel < temp_DeepNetwork
         function layerinfo = init_layerinfo(obj,layertypes,metaparams)
             % function for converting metaparams into layerinfo arrays based on specified layertypes
 
+            layerinfo = cell(metaparams.nblocks,1);     % initialize layerinfo as a cell array which can accomodate each layer
+            
+            for b = 1:metaparams.nblocks
+                layerinfo{b} = cell(size(layertypes));  % initialize a cell array for storing each block's layer's info
+                
+                for i = 1:length(layertypes)
+                    switch layertypes{i}
+                        case 'conv'
+                            % convolution parameter matricies are structured [fs nci nco]
+                            layerparams = metaparams.(append('conv',num2str(count_occurances('conv'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
+                            params = layerparams.params;                                            % load size parameters from layerparameters
+
+                            layerinfo{b}{i}.fs = params(1:layerparams.nd);      % load filtersize
+                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+
+                            layerinfo{b}{i}.stride = layerparams.stride;        % load stride
+
+                        case 'conv_same'
+                            layerparams = metaparams.(append('conv_same',num2str(count_occurances('conv_same'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
+                            params = layerparams.params;                        % load size parameters from layerparameters
+                            % this layer also has nchannels in and filtersize but those parameters are not required for getting output size
+                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+
+                        case 'tconv'
+                            layerparams = metaparams.(append('tconv',num2str(count_occurances('tconv'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
+                            params = layerparams.params;                        % load size parameters from layerparameters
+
+                            layerinfo{b}{i}.fs = params(1:layerparams.nd);      % load filtersize
+                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+
+                            layerinfo{b}{i}.stride = layerparams.stride;        % load stride
+
+                        case 'maxpool'
+                            layerparams = metaparams.(append('maxpool',num2str(count_occurances('maxpool'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
+                            
+                            layerinfo{b}{i}.poolsize = layerparams.poolsize;    % pool size
+                            layerinfo{b}{i}.stride = layerparams.stride;        % stride
+                    end
+                end
+            end          
+
+            function count = count_occurances(string)
+                % function for counting the occurances of a string within layertypes, up to a certain point
+
+                count = 0;
+
+                for j = 1:i
+                    if layertypes{j} == string;count=count+1;end
+                end
+            end
         end
     end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

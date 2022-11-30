@@ -1,129 +1,112 @@
 %{
         Generator Training Loop -> Without MetaModel
+        
+        Trains on a limited set of data
 
         Jashua Luna
         November 2022
 %}
 
-getworkers(6);                                      % init worker pool 
-nWorkers = gcp('nocreate').NumWorkers;              % store worker count
+nworkers = 8;
+getworkers(nworkers);
 
-% training parameters
 WindowSize = 80;
 ExtrapolationLength = 30;
 Overlap = 20;
 nSubsamples = 64;
-nEvalSamples = 4;
+nEvalSamples = 10;
 
-nSamples = 1e3;
+nSamples = .5e4;
 BatchSize = 30;
 
 [lrg,lrd] = deal(9e-3);     % set generator and discriminator learn rates
 
-assert(rem(nSamples,nWorkers-1)==0,"nworkers-1 must be a factor of nsamples\n");
-wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker will generate
+%% Initialize networks and generate training data
 
-%% Initialize networks and training data on workers
+gen = generator([],WindowSize   ,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
+disc = discriminator([],WindowSize,lrd);                                                % init discriminator
 
-spmd                                                                    % start spmd block  
-    if spmdIndex == 1                                                   % if worker id = 1
-%         gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
-%         disc = discriminator([],WindowSize,lrd);                    % init discriminator
-        
-        spmdBroadcast(1,gen.weightless_copy);                           % broadcast weightless copy of generator to workers
-        [xdata,ydata] = deal(cell(nSamples,1));                         % init xdata and ydata as empty cell arrays
-        locs = [1:wSamples];                                            % locs for storing x and y data from workers
-        for i = 2:nWorkers                                              % loop through workers
-            xdata(locs) = spmdReceive(i,1);                             % receive and store xdata
-            ydata(locs) = spmdReceive(i,2);                             % receive and store ydata
-            locs = locs + wSamples;                                     % incriment locs 
-        end        
-    else                                                    % all other workers
-        gen = spmdBroadcast(1);                             % receive empty generator from worker 1
-        [xdata,ydata] = gen.get_trainingdata(wSamples);     % generate training data    
-                                                            
-        spmdSend(xdata,1,1);                                % send xdata to worker 1
-        spmdSend(ydata,1,2);                                % send ydata to worker 1
-    end
+assert(rem(nSamples,1e3)==0,"1000 must be a factor of nsamples");   
+[xdata,ydata] = deal(cell(nSamples/1e3,1));         % make cell arrays for xdata and ydata
+
+datagen = @gen.get_trainingdata;    % store data generator as function to avoid overhead in parfor loop 
+
+parfor i = 1:nSamples/1e3
+    [xdata{i},ydata{i}] = datagen(1e3);     % generate samples
 end
 
-%% Training Loop 
+xdata = cat(1,xdata{:});    % reshape xdata
+ydata = cat(1,ydata{:});    % reshape ydata
 
-% iter = 1;               % start counting iterations at zero
-% total_time = 0;         % set timers to zero
-iteration_time = 0;     %
+%% Training loop
 
-while true                                                                                  % open training loop
-    tic                                                                                     % start counting iteration time
-    spmd                                                                                    % open spmd block                    
-        if spmdIndex == 1                                                                   % on worker 1
-            batchlocs = [1:BatchSize];                                                      % initialize batch locs   
-            
-            while ~isempty(batchlocs)                                                       % loop through samples in batches
-                [xbatch,ybatch] = gen.get_batch(xdata(batchlocs),ydata(batchlocs));         % get xbatch and ybatch
-                [grad_gen,grad_disc] = dlfeval(@gen.model_gradients,xbatch,ybatch,disc,disc.weights,gen.weights);    % compute gradients for generator and discriminator
-                [gen,disc] = gen.update_weights(grad_gen,grad_disc,disc,iter);              % update model weights 
+epoch = 1;
+total_time = 0;
+iteration_time = 0;
 
-                batchlocs = batchlocs + BatchSize;      % increment batchlocs
-                batchlocs(batchlocs>nSamples) = [];     % clear locs that exceed nSamples
-            end
+genbatch = @gen.get_batch;
 
-            % evaluate performance after iteration
-            eval_locs = randi(nSamples,[nEvalSamples 1]);                                   % evaluate performance on n samples
-            [eval_x,eval_y] = gen.get_batch(xdata(eval_locs),ydata(eval_locs));             % generate batch for evaluation
+fprintf("Training Network\n");
+
+while true 
+    tic
+
+    shuffle_locs = randperm(nSamples);      % shuffle samples each epoch
+    batchlocs = [1:BatchSize];              % initialize batch locations
     
-            eval_dly = gen.predict(eval_x,inject_noise(eval_x(end-WindowSize+1,:,:)));      % predict with evaluation sample
-            eval_y = eval_y.y;                                                              % discard extra data
-               
-            spmdBarrier;                            % pause execution until other workers have generated samples
-            locs = [1:wSamples];                    % initialize locs up to wSamples
-            for i = 2:nWorkers                      % loop through workers
-                xdata(locs) = spmdReceive(i,1);     % receive and store xdata
-                ydata(locs) = spmdReceive(i,2);     % receive and store ydata
-                locs = locs + wSamples;             % increment locs
+    while ~isempty(batchlocs)                                                                               % loop through samples in batches
+        [xbatch,ybatch] = genbatch(xdata(shuffle_locs(batchlocs)),ydata(shuffle_locs(batchlocs)));          % get xbatch and ybatch
+        [grad_gen,grad_disc] = dlfeval(@gen.model_gradients,xbatch,ybatch,disc,disc.weights,gen.weights);   % compute gradients for generator and discriminator
+        [gen,disc] = gen.update_weights(grad_gen,grad_disc,disc,epoch);                                      % update model weights
+
+        if any(rem(batchlocs,1e3)==0)
+            % evaluate performance every 1000 samples
+            eval_locs = randi(nSamples,[nEvalSamples 1]);                       % evaluate performance on n samples
+            [eval_x,eval_y] = genbatch(xdata(eval_locs),ydata(eval_locs));      % generate batch for evaluation
+        
+            eval_prediction = gatext(gen.predict(eval_x,inject_noise(eval_x(end-WindowSize+1,:,:))));      % predict with evaluation sample
+            eval_reference  = gatext(eval_y.y);                                                            % discard extra data
+        
+            for i = 1:nEvalSamples                      % loop through evaluation samples
+                subplot(nEvalSamples,2,2*i-1)           % plot each sample on a separate subplot                          
+                plot(eval_reference(:,i));              % plot reference sample
+                hold on 
+                plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
+                hold off
+                xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
+        
+                subplot(nEvalSamples,2,2*i)             
+                plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
+                hold on 
+                plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot cumulative sum of scaled predicted output
+                hold off
+                xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
             end
-        else                                                    % on all workers except worker 1
-            [xdata,ydata] = gen.get_trainingdata(wSamples);     % generate training samples
-            spmdBarrier;                                        % pause execution until all workers have generated samples and training iteration is complete
-
-            spmdSend(xdata,1,1);                    % send xdata to worker 1
-            spmdSend(ydata,1,2);                    % send ydata to worker 1
+            f = getframe;
         end
+       
+        batchlocs = batchlocs + BatchSize;      % increment batchlocs
+        batchlocs(batchlocs>nSamples) = [];     % clear locs that exceed nSamples    
     end
 
-    eval_prediction = gatext(eval_dly{1});  % extract data from composite arrays
-    eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
 
-    for i = 1:nEvalSamples                      % loop through evaluation samples
-        subplot(nEvalSamples,2,2*i-1)           % plot each sample on a separate subplot                          
-        plot(eval_reference(:,i));              % plot reference sample
-        hold on 
-        plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
-        hold off
-        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
-
-        subplot(nEvalSamples,2,2*i)             
-        plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
-        hold on 
-        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot cumulative sum of scaled predicted output
-        hold off
-        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
-    end
-    f = getframe;
     
     iteration_time = toc;                           % how long did this iteration take
     total_time = iteration_time + total_time;       % add iteration time to total time
     [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
-    fprintf("Iteration %d Complete, Time Elapsed: %.2f s\n",iter,iteration_time);   % display iteration info
+    fprintf("Iteration %d Complete, Time Elapsed: %.2f s\n",epoch,iteration_time);   % display iteration info
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
     
     
-    if rem(iter,50) == 0                                                                            % every n iterations
-        checkpointsave_generator = gen{1};                                                          % extract generator from parallel pool  
-        checkpointsave_discriminator = disc{1};                                                     % extract discriminator from parallel pool
+    if rem(epoch,5) == 0                                                                         % every n iterations
+        checkpointsave_generator = gen;                                                          % extract generator from parallel pool  
+        checkpointsave_discriminator = disc;                                                     % extract discriminator from parallel pool
 
-        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","iter","total_time");       % save generator, discriminator, iter, and total_time
+        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","epoch","total_time");       % save generator, discriminator, iter, and total_time
     end
 
-    iter = iter+1;  % increment iteration
+    epoch = epoch+1;  % increment iteration    
+
 end
+
+

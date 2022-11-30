@@ -138,14 +138,92 @@ classdef metamodel < temp_DeepNetwork
             detrend_decoder = obj.init_layerinfo({'tconv'},metaparams.DD);  % init layerinfo array for detrend decoder
 
             outputsize = obj.get_blockoutputsize(detrend_decoder,detrendinfosize);  % get outputsize for detrend decoder
-            outputsiz
-
+            
+            assert(all(size(inputsize) == size(outputsize)),"detrended prediction must be the same size as detrend decoder output");
 
         end
 
         function layerinfo = init_layerinfo(obj,layertypes,metaparams)
             % function for converting metaparams into layerinfo arrays based on specified layertypes
 
+            layerinfo = cell(metaparams.nblocks,1);     % initialize layerinfo as a cell array which can accomodate each layer
+            
+            for b = 1:metaparams.nblocks
+                layerinfo{b} = cell(size(layertypes));  % initialize a cell array for storing each block's layer's info
+                
+                for i = 1:length(layertypes)
+                    switch layertypes{i}
+                        case 'conv'
+                            % convolution parameter matricies are structured [fs nci nco]
+                            layerparams = metaparams.(append('conv',count_occurances('conv')));     % read layerinfo from metaparameters, adjust f
+                            params = layerparams.params;
+
+                            layerinfo{b}{i}.fs = params(1:layerparams.nd);
+                            layerinfo{b}{i}.nco = params(layerparams.nd+2);
+
+                            layerinfo{b}{i}.stride = layerparams.stride;
+
+                        case 'conv_same'
+
+                        case 'tconv'
+
+                        case 'maxpool'
+
+
+                    end
+
+
+
+
+
+
+
+                end
+            end          
+
+            function count = count_occurances(string)
+                % function for counting the occurances of a string within layertypes, up to a certain point
+
+                count = 0;
+
+                for j = 1:i
+                    if layertypes{j} == string;count=count+1;end
+                end
+            end
         end
     end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

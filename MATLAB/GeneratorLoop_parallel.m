@@ -1,5 +1,7 @@
 %{
-        Generator Training Loop -> Without MetaModel
+        Parallelized Generator Training Loop -> Without MetaModel
+        
+        For full production.
 
         Jashua Luna
         November 2022
@@ -10,7 +12,7 @@ nWorkers = gcp('nocreate').NumWorkers;              % store worker count
 
 % training parameters
 WindowSize = 80;
-ExtrapolationLength = 15;
+ExtrapolationLength = 30;
 Overlap = 20;
 nSubsamples = 64;
 nEvalSamples = 4;
@@ -18,7 +20,7 @@ nEvalSamples = 4;
 nSamples = 1e3;
 BatchSize = 30;
 
-[lrg,lrd] = deal(3e-3);     % set generator and discriminator learn rates
+[lrg,lrd] = deal(9e-3);     % set generator and discriminator learn rates
 
 assert(rem(nSamples,nWorkers-1)==0,"nworkers-1 must be a factor of nsamples\n");
 wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker will generate
@@ -100,11 +102,14 @@ while true                                                                      
         hold on 
         plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
         hold off
+        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
 
         subplot(nEvalSamples,2,2*i)             
         plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
         hold on 
-        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot 
+        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot cumulative sum of scaled predicted output
+        hold off
+        xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
     end
     f = getframe;
     

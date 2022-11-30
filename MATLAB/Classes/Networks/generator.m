@@ -338,7 +338,7 @@ classdef generator < DeepNetwork
 
                 DetrendValues = info;
                 for i = 1:obj.info.RDL.DD.nBlocks                                                       % loop through layers
-                    DetrendValues = decoder_block(DetrendValues,layer.blocks{i},@tanh);                 % decoder block tanh activation
+                    DetrendValues = decoder_block(obj.dropout(DetrendValues),layer.blocks{i},@tanh);    % decoder block tanh activation
 
                     debug_message = append("Output size after ",num2str(i)," iterations ");             % debug message
                     obj.debug_info(debug_message,DetrendValues);                                        % display layer output size 
