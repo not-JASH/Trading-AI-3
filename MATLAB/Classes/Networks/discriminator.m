@@ -49,7 +49,7 @@ classdef discriminator < DeepNetwork
             dly = cat(3,real(dly),imag(dly));       % split and concatenate real and imag values along third dimension
             
             for i = 1:obj.info.PL.nBlocks                                                 % loop through blocks
-                dly = conv_maxpool(obj.dropout(dly),obj.weights.PL.blocks{i},@leakyrelu);   % convolution x2 + maxpool blocks
+                dly = conv_maxpool(dly,obj.weights.PL.blocks{i},@leakyrelu);   % convolution x2 + maxpool blocks
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
@@ -138,11 +138,7 @@ classdef discriminator < DeepNetwork
                     4   9   64  128;
                     
                     4   9   128 256;    
-                    4   9   256 512;
-                
-                    4   9   512 1024;
-                    4   9   1024 1;
-                
+                    4   9   256 1;                
                     ];
             end      
         end

@@ -13,14 +13,14 @@ nWorkers = gcp('nocreate').NumWorkers;              % store worker count
 % training parameters
 WindowSize = 80;
 ExtrapolationLength = 30;
-Overlap = 20;
-nSubsamples = 64;
-nEvalSamples = 4;
+Overlap = 30;
+nSubsamples = 30;
+nEvalSamples = 20;
 
 nSamples = 1e3;
-BatchSize = 30;
+BatchSize = 25;
 
-[lrg,lrd] = deal(9e-3);     % set generator and discriminator learn rates
+[lrg,lrd] = deal(3e-3);     % set generator and discriminator learn rates
 
 assert(rem(nSamples,nWorkers-1)==0,"nworkers-1 must be a factor of nsamples\n");
 wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker will generate
@@ -29,8 +29,8 @@ wSamples = nSamples/(nWorkers-1);   % determine number of samples each worker wi
 
 spmd                                                                    % start spmd block  
     if spmdIndex == 1                                                   % if worker id = 1
-%         gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
-%         disc = discriminator([],WindowSize,lrd);                    % init discriminator
+        gen = generator([],WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,lrg);   % init generator
+        disc = discriminator([],WindowSize,lrd);                    % init discriminator
         
         spmdBroadcast(1,gen.weightless_copy);                           % broadcast weightless copy of generator to workers
         [xdata,ydata] = deal(cell(nSamples,1));                         % init xdata and ydata as empty cell arrays
@@ -49,10 +49,18 @@ spmd                                                                    % start 
     end
 end
 
+if exist('checkpointsave_generator','var')
+    gen{1} = checkpointsave_generator;
+    disc{1} = checkpointsave_discriminator;
+end
+
 %% Training Loop 
 
-% iter = 1;               % start counting iterations at zero
-% total_time = 0;         % set timers to zero
+
+if ~exist('iter','var')
+    iter = 1;               % start counting iterations at zero
+    total_time = 0;         % set timers to zero
+end
 iteration_time = 0;     %
 
 while true                                                                                  % open training loop
@@ -93,21 +101,21 @@ while true                                                                      
         end
     end
 
-    eval_prediction = gatext(eval_dly{1});  % extract data from composite arrays
-    eval_reference = gatext(eval_y{1});     % also remove arrays from gpu and make untraced
+    eval_prediction = squeeze(gatext(eval_dly{1}));  % extract data from composite arrays
+    eval_reference = squeeze(gatext(eval_y{1}));     % also remove arrays from gpu and make untraced
 
     for i = 1:nEvalSamples                      % loop through evaluation samples
         subplot(nEvalSamples,2,2*i-1)           % plot each sample on a separate subplot                          
         plot(eval_reference(:,i));              % plot reference sample
         hold on 
-        plot(eval_prediction(:,i)/range(abs(eval_prediction(:,i))));        % plot scaled predicted output
+        plot(eval_prediction(:,i));        % plot scaled predicted output
         hold off
         xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
 
         subplot(nEvalSamples,2,2*i)             
         plot(cumsum(eval_reference(:,i)));      % plot the cumulative sum of reference samples
         hold on 
-        plot(cumsum(eval_prediction(:,i)/range(abs(eval_prediction(:,i)))));    % plot cumulative sum of scaled predicted output
+        plot(cumsum(eval_prediction(:,i)));    % plot cumulative sum of scaled predicted output
         hold off
         xline(WindowSize-ExtrapolationLength);  % draw a line at the start of the extrapolated section
     end
@@ -117,14 +125,14 @@ while true                                                                      
     total_time = iteration_time + total_time;       % add iteration time to total time
     [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
     fprintf("Iteration %d Complete, Time Elapsed: %.2f s\n",iter,iteration_time);   % display iteration info
+    fprintf("Average Error: %.3f\n",mean(abs(eval_reference-eval_prediction),'all')); 
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
-    
-    
+   
     if rem(iter,50) == 0                                                                            % every n iterations
         checkpointsave_generator = gen{1};                                                          % extract generator from parallel pool  
         checkpointsave_discriminator = disc{1};                                                     % extract discriminator from parallel pool
 
-        save("checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","iter","total_time");       % save generator, discriminator, iter, and total_time
+        save("parallel_checkpointsave.mat","checkpointsave_discriminator","checkpointsave_generator","iter","total_time");       % save generator, discriminator, iter, and total_time
     end
 
     iter = iter+1;  % increment iteration

@@ -34,11 +34,13 @@ classdef generator < DeepNetwork
 %              [obj.weights.SL,obj.info.SL]       = obj.init_scalinglayer(layersizes.SL);               % Initialize scaling layer.
              [obj.weights.RDL,obj.info.RDL]     = obj.init_reweightdetrendlayer(layersizes.RDL);        % Initialize reweight-detrend layer.
              [~,obj.info.WTL]                   = obj.init_waveletlayer(layersizes.WTL);                % Initialize wavelet layer.
-             [obj.weights.SEL,obj.info.SEL]     = obj.init_set_encodinglayer(layersizes.SEL);           % Initialize set-encoder.
-             [obj.weights.EEL,obj.info.EEL]     = obj.init_estimate_encodinglayer(layersizes.EEL);      % Initialize estimate-encoder.
+             [obj.weights.E.SEL,obj.info.E.SEL] = obj.init_set_encodinglayer(layersizes.SEL);           % Initialize set-encoder.
+             [obj.weights.E.EEL,obj.info.E.EEL] = obj.init_estimate_encodinglayer(layersizes.EEL);      % Initialize estimate-encoder.
              [obj.weights.PL,obj.info.PL]       = obj.init_predictionlayer(layersizes.PL);              % Initialize prediction layer.
              [obj.weights.IDL,obj.info.IDL]     = obj.init_inversedetrendlayer(layersizes.IDL);         % Initialize inverse-detrend layer.
 %              [obj.weights.ISL,obj.info.ISL]     = obj.init_inversescalinglayer(layersizes.ISL);         % Initialize inverse-scaling layer.
+
+            obj.info.E.avg_g = [];obj.info.E.avg_sqg = [];  % initialize encoder average gradient and average squared gradient
         end
         
         %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -62,6 +64,7 @@ classdef generator < DeepNetwork
                 ydata{i}.x      = scale_detrend_reweight(xdata{i},true);                        % subsample,scale, detrend, reweight xdata
                 ydata{i}.y      = obj.data(locs(i) + ylocs,5) - obj.data(locs(i) + ylocs,2);    % sample ydata as closing price - open price
                 ydata{i}.y      = obj.scalinglayer(ydata{i}.y,'');                              % scale ydata
+                ydata{i}.y      = obj.reweight(ydata{i}.y);                                     % reweight ydata
                 ydata{i}.y_dt   = obj.reweight_detrend(ydata{i}.y,false);                       % detrend, reweight ydata
             end
             
@@ -101,21 +104,42 @@ classdef generator < DeepNetwork
             % function for calculating model gradients and updating weights
             
             [gen_loss,disc_loss] = obj.compute_losses(xbatch,ybatch,disc);      % compute losses for generator and discriminator
-
-            grad_gen = dlgradient(gen_loss,gen_weights,'RetainData',true);      % compute generator gradient
+            
+            grad_gen.RDL    = dlgradient(gen_loss.RDL,gen_weights.RDL,'RetainData',true);       % compute reweight-detrend gradient
+            grad_gen.E      = dlgradient(gen_loss.E,gen_weights.E,'RetainData',true);           % compute encoder gradient
+            grad_gen.PL     = dlgradient(gen_loss.PL,gen_weights.PL,'RetainData',true);         % compute prediction layer gradient
+            grad_gen.IDL    = dlgradient(gen_loss.IDL,gen_weights.IDL,'RetainData',true);       % compute inverse detrend layer gradient
+            
             grad_disc = dlgradient(disc_loss,disc_weights);                     % compute discriminator gradient
         end
 
         function [obj,disc] = update_weights(obj,grad_gen,grad_disc,disc,iter)
             % function for updating model weights 
 
-            [obj.weights,obj.info.avg_g,obj.info.avg_sqg] = ...                                     % update generator parameters with adam
-                adamupdate(obj.weights,grad_gen,obj.info.avg_g,obj.info.avg_sqg,...                 % input weights, generator gradient, average gradient, average squared gradient
-                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);       % iteration, generator learn rate, decay, squared decay
+            % update reweight-detrend layer weights
+            [obj.weights.RDL,obj.info.RDL.avg_g,obj.info.RDL.avg_sqg] = ...                             % update reweight detrend layer weights
+                adamupdate(obj.weights.RDL,grad_gen.RDL,obj.info.RDL.avg_g,obj.info.RDL.avg_sqg,...     % input weights, reweight detrend gradient, average gradient, average squared gradient
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);           % iteration, generator learn rate, decay, squared decay
 
-            [disc.weights,disc.info.avg_g,disc.info.avg_sqg] = ...                                  % update discriminator parameters with adam
-                adamupdate(disc.weights,grad_disc,disc.info.avg_g,disc.info.avg_sqg,...             % input weights, generator gradient, average gradient, average squared gradient
-                iter,disc.info.settings.lr,disc.info.settings.decay,disc.info.settings.sqdecay);    % iteration, generator learn rate, decay, squared decay
+            % update prediction layer weights
+            [obj.weights.PL,obj.info.PL.avg_g,obj.info.PL.avg_sqg] = ...                                % update prediction layer weights
+                adamupdate(obj.weights.PL,grad_gen.PL,obj.info.PL.avg_g,obj.info.PL.avg_sqg,...         % input weights, prediction gradient, average gradient, average squared gradient
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);           % iteration, generator learn rate, decay, squared decay
+
+            % update inverse-detrend layer weights
+            [obj.weights.IDL,obj.info.IDL.avg_g,obj.info.IDL.avg_sqg] = ...                             % update inverse-detrend layer weights
+                adamupdate(obj.weights.IDL,grad_gen.IDL,obj.info.IDL.avg_g,obj.info.IDL.avg_sqg,...     % input weights, inverse-detrend gradient, average gradient, average squared gradient
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);           % iteration, generator learn rate, decay, squared decay
+
+            % update encoder layer weights
+            [obj.weights.E,obj.info.E.avg_g,obj.info.E.avg_sqg] = ...                                   % update encoder parameters with adam
+                adamupdate(obj.weights.E,grad_gen.E,obj.info.E.avg_g,obj.info.E.avg_sqg,...             % input weights, generator gradient, average gradient, average squared gradient
+                iter,obj.info.settings.lr,obj.info.settings.decay,obj.info.settings.sqdecay);           % iteration, generator learn rate, decay, squared decay
+            
+            % update discriminator weights
+            [disc.weights,disc.info.avg_g,disc.info.avg_sqg] = ...                                      % update discriminator parameters with adam
+                adamupdate(disc.weights,grad_disc,disc.info.avg_g,disc.info.avg_sqg,...                 % input weights, generator gradient, average gradient, average squared gradient
+                iter,disc.info.settings.lr,disc.info.settings.decay,disc.info.settings.sqdecay);        % iteration, generator learn rate, decay, squared decay
         end
         
         function [gen_loss,disc_loss] = compute_losses(obj,xbatch,outputs,disc)
@@ -132,13 +156,19 @@ classdef generator < DeepNetwork
             yes = disc.predict(outputs.y_dt);           % determine discriminator output on real samples
             no  = disc.predict(permute(dly,[1 3 2]));   % determine discriminator output on predicted samples, permute dly such that second dimension is singleton
 
+            disc_loss = -.5*mean(log(yes+eps) + log(1-no+eps),'all');   % discriminator loss
+
             rwdt_loss           = compute_reweight_detrend_loss(dlx_rwdt,outputs.x);       % compute reweight-detrend layer loss
             prediction_loss     = compute_prediction_loss(dly_pl,outputs.y_dt);            % compute prediction layer loss
             retrend_loss        = compute_retrend_loss(dly,outputs.y);                     % compute retrend layer loss
 
-            disc_loss = -.5*mean(log(yes+eps) + log(1-no+eps),'all');   % discriminator loss
+            gen_loss.RDL   =  100*rwdt_loss;          
+            gen_loss.PL    = -.5*mean(log(no+eps),'all') + 100*prediction_loss;
+            gen_loss.IDL   = -.5*mean(log(no+eps),'all') + 100*retrend_loss;
+            gen_loss.E     = -.5*mean(log(no+eps),'all') + 100*mean([prediction_loss retrend_loss]);
 
-            gen_loss = -.5*mean(log(no+eps),'all') + 5*rwdt_loss + 50*prediction_loss + 100*retrend_loss;   % combine layer & discriminator losses for gen loss
+%             gen_loss = -.5*mean(log(no+eps),'all') + 100*mean([rwdt_loss prediction_loss retrend_loss]);   % combine layer & discriminator losses for gen loss
+%             gen_loss = -.5*mean(log(no+eps),'all') + 100*mean(retrend_loss);
             
             function loss = compute_reweight_detrend_loss(dlx,x)
                 % function for computing reweight-detrend-layer loss
@@ -160,6 +190,32 @@ classdef generator < DeepNetwork
             end
         end
 
+        function y = reweight(obj,x)
+            % function for reweighting samples
+            
+            y = huber_reweight(x);
+            
+            function xbatch = huber_reweight(xbatch)
+                % function for reweighting xbatch with huber weight function
+                % xbatch is in format TC
+                
+                sf  = mad(xbatch,1,1)/0.6745;               % compute scale factor as median absolute deviation divided by 0.6745
+                r   = abs(xbatch - median(xbatch,1))./sf;    % compute residual as abs delta x - median(x) divided by sf
+
+                w = huber_weight(r,1.547);       % get huber weights
+                xbatch = w.*xbatch;             % reweight samples
+            end
+
+            function weights = huber_weight(x,c)
+                % function for determining huber weights
+                
+                assert(ndims(x)==2,"X must have two dimensions");
+
+                weights = ones(size(x));                   % weights where x < c = 1
+                weights(x > c) = c./x(x>c);                 % c/x otherwise     
+            end
+        end
+
         function y = reweight_detrend(obj,x,subsampleflag)
             % function for generating reweighted-detrended samples 
             % where x is a two dimensional array TB 
@@ -167,8 +223,8 @@ classdef generator < DeepNetwork
             if subsampleflag            % if sample should be subsampled
                 x = subsample(x);       % subsample
             end
-
-            x = huber_reweight(x);                                      % subsample and reweight x 
+            
+            x = obj.reweight(x);                                        % subsample and reweight x 
             y = obj.waveletlayer(x);                                    % obtain the waveletlayer output of x
             y = inverse_waveletlayer(y,zeros(size(x),obj.DataType));    % inverse wavelet layer y
 
@@ -189,28 +245,6 @@ classdef generator < DeepNetwork
                 for i = 1:size(x,3)                 % loop through subsamples
                     y(:,i) = icwt(x(:,:,i));        % inverse continous wavelet transform
                 end
-            end
-
-            function xbatch = huber_reweight(xbatch)
-                % function for reweighting xbatch with huber weight function
-                % xbatch is in format TC
-                
-                sf  = mad(xbatch,1,1)/0.6745;               % compute scale factor as median absolute deviation divided by 0.6745
-                r   = abs(xbatch - median(xbatch,1))/sf;    % compute residual as abs delta x - median(x) divided by sf
-
-                w = huber_weight(r,1.547);      % get huber weights
-                xbatch = w.*xbatch;             % reweight samples
-            end
-
-            function weights = huber_weight(x,c)
-                % function for determining huber weights
-
-                weights = zeros(size(x));
-                for i = 1:size(x,2)
-                    gtc = x(:,i)>= c(i);                   % locations of x values greater than or equal to c
-                    weights(gtc,i) = 1;                    % weights at locs = 1
-                    weights(~gtc,i) = c(i)/x(~gtc,i);      % otherwise weights = c/x
-                end                 
             end
 
             function x1 = subsample(x)
@@ -265,7 +299,7 @@ classdef generator < DeepNetwork
 
             obj.debug_info("<strong>Subsampling Layer</strong>",[]);        % display active layer's name while in debug
             
-            batchsize = size(x,3);
+            batchsize = size(x,ndims(x));
             set = gpudl(zeros([obj.info.WindowSize obj.info.nSubsamples batchsize],obj.DataType),'');           % [ws nsubsamples batchsize] TCB
             
             locs = [1:obj.info.WindowSize];                                 % Initialize locs 
@@ -281,8 +315,21 @@ classdef generator < DeepNetwork
             % layer for scaling and subsampling input data
 
             obj.debug_info("<strong>Scaling Layer</strong>",[]);    % display active layer's name while in debug
+            ScaleFactor = zeros(size(x,3),1);
+            for i = 1:length(ScaleFactor)
+                if ndims(x)==3
+                    ScaleFactor(i) = confidence_bounds(x(:,:,i),0.95);    % determine scale factor based on 95% confidence interval
+                else
+                    ScaleFactor(i) = confidence_bounds(x(:,i),0.95);    % determine scale factor based on 95% confidence interval
+                end
+            end
+            
+            if ndims(x)==3
+                ScaleFactor = permute(ScaleFactor,[2 3 1]);
+            else
+                ScaleFactor = permute(ScaleFactor,[2 1]);
+            end
 
-            ScaleFactor = range(abs(x),1);                          % scale input data by the range of its absolute values
             dly = x./ScaleFactor;                                   % 
 
             if gpuload                      % if gpu loading flag
@@ -290,6 +337,24 @@ classdef generator < DeepNetwork
             end
 
             obj.debug_info("Scaled Data Sizes: ",dly);                % display output's dimensions while in debug
+
+            function sf = confidence_bounds(sample,ci)
+                % function for determining scale factor based on confidence interval
+                
+                if isdlarray(sample)
+                    sample = gatext(sample);
+                end
+
+                [mu,sig] = normfit(sample);              % fit standard distribution to data
+                x1 = linspace(min(sample),max(sample),1e3);    % make points at which normcdf will be evaluated
+                p = normcdf(x1,mu,sig);              % evaluate norm cdf
+                sf = x1(p>=ci);                      % isolate confidence region
+                try
+                    sf = sf(1);                         % take just the first point
+                catch
+                    sf = x1(end);
+                end
+            end
         end
 
         function [dly,info] = reweightdetrendlayer(obj,dlx)
@@ -310,7 +375,7 @@ classdef generator < DeepNetwork
                 
                 info = dlx;
                 for i = 1:obj.info.RDL.IE.nBlocks                                               % loop through layers
-                    info = encoder_block(obj.dropout(info),layer.blocks{i},@relu);              % encoder block
+                    info = encoder_block(info,layer.blocks{i},@tanh);              % encoder block
 
                     debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                     obj.debug_info(debug_message,info);                                         % display layer output size 
@@ -324,7 +389,7 @@ classdef generator < DeepNetwork
                 
                 WeightCoeffs = info;
                 for i = 1:obj.info.RDL.RD.nBlocks                                                   % loop through layers
-                    WeightCoeffs = decoder_block(obj.dropout(WeightCoeffs),layer.blocks{i},@tanh);  % decoder block tanh activation
+                    WeightCoeffs = decoder_block(WeightCoeffs,layer.blocks{i},@tanh);  % decoder block tanh activation
 
                     debug_message = append("Output size after ",num2str(i)," iterations ");         % debug message
                     obj.debug_info(debug_message,WeightCoeffs);                                     % display layer output size 
@@ -338,7 +403,7 @@ classdef generator < DeepNetwork
 
                 DetrendValues = info;
                 for i = 1:obj.info.RDL.DD.nBlocks                                                       % loop through layers
-                    DetrendValues = decoder_block(obj.dropout(DetrendValues),layer.blocks{i},@tanh);    % decoder block tanh activation
+                    DetrendValues = decoder_block(DetrendValues,layer.blocks{i},@tanh);    % decoder block tanh activation
 
                     debug_message = append("Output size after ",num2str(i)," iterations ");             % debug message
                     obj.debug_info(debug_message,DetrendValues);                                        % display layer output size 
@@ -354,7 +419,6 @@ classdef generator < DeepNetwork
                 dly = obj.convlayer(dly,layer.cn1d2,'DataFormat','SCB');               % second 1D convolution
                 dly = activation(dly);                                                 % activation layer
 
-                dly = obj.maxpoollayer(dly,[9],'Stride',[1],'DataFormat','SCB');       % max pooling layer
                 dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SCB');            % batch normalization layer
 
             end
@@ -387,31 +451,29 @@ classdef generator < DeepNetwork
 
             obj.debug_info("<strong>Set Encoding Layer</strong>",[]);                           % display active layer's name while in debug
             
-            dly = permute(dlx,[1 2 3 5 4]);     % permute data such that dimensions are SSSCB - they are STCB but TC -> SS and a new C dimension is added for 3d conv
-            dly = cat(4,real(dly),imag(dly));                                                   % separate wavelet layer output into real and complex components
+%             dly = permute(dlx,[1 2 3 5 4]);     % permute data such that dimensions are SSSCB - they are STCB but TC -> SS and a new C dimension is added for 3d conv
+            dly = cat(3,real(dlx),imag(dlx));                                                   % separate wavelet layer output into real and complex components
             obj.debug_info("Output size after permute operation and concatenation: ",dly);      % display layer output size
 
-            for i = 1:obj.info.SEL.nBlocks                                                      % loop through set encoding layer blocks
-                dly = set_encodingblock(obj.dropout(dly),obj.weights.SEL.blocks{i},@relu);      % set encoding blocks with relu activation
+            for i = 1:obj.info.E.SEL.nBlocks                                                    % loop through set encoding layer blocks
+                dly = set_encodingblock(dly,obj.weights.E.SEL.blocks{i},@tanh);            % set encoding blocks with tanh activation
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");         % debug message
                 obj.debug_info(debug_message,dly);                                              % display layer output size 
             end
 
-            dly = squeeze(dly);                                                                 % remove one dimension
+%             dly = squeeze(dly);                                                               % remove one dimension
 
             function dly = set_encodingblock(dlx,layer,activation)
                 % set sncoding blocks
                 
-                dly = obj.convlayer(dlx,layer.cn3d1,'DataFormat','SSSCB');                      % first 3D convolution
-                dly = activation(dly);                                                          % activation layer
+                dly = obj.groupedconvlayer(dlx,layer.gcn2d1,'DataFormat','SSCB');   % first grouped convolution
+                dly = activation(dly);                                              % activation layer
 
-                dly = obj.convlayer(dly,layer.cn3d2,'DataFormat','SSSCB');                      % second 3D convolution
-                dly = activation(dly);                                                          % activation layer
+                dly = obj.groupedconvlayer(dly,layer.gcn2d2,'DataFormat','SSCB');   % second grouped convolution
+                dly = activation(dly);                                              % activation layer
 
-                dly = obj.maxpoollayer(dly,[4 4 4],'Stride',[1 1 1],'DataFormat','SSSCB');      % maximum pooling layer
-
-                dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SSSCB');                   % batch normalization layer
+                dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SSCB');        % batch normalization layer
    
             end            
         end
@@ -419,15 +481,15 @@ classdef generator < DeepNetwork
         function [dly] = estimate_encodinglayer(obj,dlx)
             % layer for encoding previous estimate 
 
-            obj.debug_info("<strong>Estimate Encoding Layer</strong>",[]);                           % display active layer's name while in debug
+            obj.debug_info("<strong>Estimate Encoding Layer</strong>",[]);                  % display active layer's name while in debug
 
             dlx = permute(dlx,[1 3 2]);         % Estimate is in the format TB, permute such that dimensions are TCB (1 Channel)
             dly = obj.waveletlayer(dlx);        % Wavelet transform the batch of estimates
-            dly = permute(dly,[1 2 4 3]);       % rearrange dly such that third dimension is singleton
+            dly = permute(dly,[1 2 4 3]);       % permute dimensions such that they are SSCB
             dly = cat(3,real(dly),imag(dly));   % split dly into real and complex parts
 
-            for i = 1:obj.info.EEL.nBlocks                                                          % loop through blocks
-                dly = estimate_encoderblock(obj.dropout(dly),obj.weights.EEL.blocks{i},@relu);      % estimate encoder blocks with relu activation
+            for i = 1:obj.info.E.EEL.nBlocks                                                % loop through blocks
+                dly = estimate_encoderblock(dly,obj.weights.E.EEL.blocks{i},@tanh);    % estimate encoder blocks with tanh activation
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
@@ -436,15 +498,13 @@ classdef generator < DeepNetwork
             function dly = estimate_encoderblock(dlx,layer,activation)
                 % function for estimate encoder block
                 
-                dly = obj.convlayer(dlx,layer.cn2d1,'DataFormat','SSCB');                   % first 2D convolution
-                dly = activation(dly);                                                      % activation layer
+                dly = obj.convlayer(dlx,layer.cn2d1,'DataFormat','SSCB');       % first 2D convolution
+                dly = activation(dly);                                          % activation layer
 
-                dly = obj.convlayer(dly,layer.cn2d2,'DataFormat','SSCB');                   % second 2D convolution
-                dly = activation(dly);                                                      % activation layer
+                dly = obj.convlayer(dly,layer.cn2d2,'DataFormat','SSCB');       % second 2D convolution
+                dly = activation(dly);                                          % activation layer
 
-                dly = obj.maxpoollayer(dly,[4 8],'Stride',[1 1],'DataFormat','SSCB');       % max pooling layer
-
-                dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SSCB');                % batch normalization layer
+                dly = obj.batchnormlayer(dly,layer.bn1,'DataFormat','SSCB');    % batch normalization layer
                 
             end
         end
@@ -452,28 +512,28 @@ classdef generator < DeepNetwork
         function [dly,obj] = predictionlayer(obj,dlx_set,dlx_estimate)
             % layer for predicting signal from encoded data
 
-            obj.debug_info("<strong>Prediction Layer</strong>",[]);                           % display active layer's name while in debug
+            obj.debug_info("<strong>Prediction Layer</strong>",[]);                             % display active layer's name while in debug
             
             dly = dlx_set;
             batchsize = size(dly,4);
 
             for i = 1:obj.info.PL.nBlocks2D                                                     % loop through blocks
-                dly = prediction_block2D(obj.dropout(dly),obj.weights.PL.blocks2D{i},@tanh);    % prediction decoder blocks
+                dly = prediction_block2D(dly,obj.weights.PL.blocks2D{i},@tanh);            % prediction decoder blocks
                 
                 debug_message = append("Output size after ",num2str(i)," iterations ");         % debug message
                 obj.debug_info(debug_message,dly);                                              % display layer output size 
             end
 
-            dly = obj.batchnormlayer(obj.dropout(dly+dlx_estimate),obj.weights.PL.bn1,...       % combine set and estimate data
-                'DataFormat','SSCB');  
+            dly = obj.batchnormlayer(dly+dlx_estimate,obj.weights.PL.bn1,'DataFormat','SSCB');  % combine set and estimate data
+                  
             dly = reshape(dly,obj.info.WindowSize,[],batchsize);                                % reshape output 
             obj.debug_info("Output size after reshape : ",dly);                                 % display output size
 
             for i = 1:obj.info.PL.nBlocks1D                                                     % loop through 1D blocks
-                dly = prediction_block1D(obj.dropout(dly),obj.weights.PL.blocks1D{i},@tanh);    % 1D block
+                dly = prediction_block1D(dly,obj.weights.PL.blocks1D{i},@tanh);            % 1D block
                 
-                debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
-                obj.debug_info(debug_message,dly);                                          % display layer output size 
+                debug_message = append("Output size after ",num2str(i)," iterations ");         % debug message
+                obj.debug_info(debug_message,dly);                                              % display layer output size 
             end
 
             dly = squeeze(dly); % remove singleton dimension
@@ -507,13 +567,14 @@ classdef generator < DeepNetwork
             dly = DetrendInfo;                                                              % set dly as detrend info from reweight-detrend layer
                 
             for i = 1:obj.info.IDL.nBlocks                                                  % loop through blocks
-                dly = idetrend_block(obj.dropout(dly),obj.weights.IDL.blocks{i},@tanh);     % inverse-detrend block
+                dly = idetrend_block(dly,obj.weights.IDL.blocks{i},@tanh);                  % inverse-detrend block
 
                 debug_message = append("Output size after ",num2str(i)," iterations ");     % debug message
                 obj.debug_info(debug_message,dly);                                          % display layer output size 
             end
-                
-            dly = obj.batchnormlayer(permute(dlx,[1 3 2])+dly,obj.weights.IDL.bn1,'DataFormat','SCB');      % retrend dlx and scale
+           
+            dly = (permute(dlx,[1 3 2])+dly);
+            dly = obj.batchnormlayer(dly,obj.weights.IDL.bn1,'DataFormat','SCB');      % retrend dlx and scale
             dly = squeeze(dly);                                                                             % remove singleton dimension
     
             function dly = idetrend_block(dlx,layer,activation)
@@ -547,6 +608,8 @@ classdef generator < DeepNetwork
 
             info.RD.nBlocks         = size(layersizes.RD,1);                            % determine number of reweight decoder blocks
             info.DD.nBlocks         = size(layersizes.DD,1);                            % determine number of detrend decoder blocks
+
+            info.avg_g = [];info.avg_sqg = [];
 
             layer.IE = init_inputencoder(layersizes.IE);                                % initialize input encoder
             layer.RD = init_reweightdecoder(layersizes.RD);                             % initialize reweight decoder
@@ -621,9 +684,9 @@ classdef generator < DeepNetwork
             function block = init_set_encodingblock(ls)            
                 % function for initializing set encoder blocks
 
-                block.cn3d1 = obj.init_convlayer(ls(1,1:3),ls(1,4),ls(1,5),obj.DataType);                   % init first 3D conv layer
-                block.cn3d2 = obj.init_convlayer(ls(2,1:3),ls(2,4),ls(2,5),obj.DataType);                   % init second 3D conv layer
-                block.bn1   = obj.init_batchnormlayer(ls(2,5),obj.DataType);                                % init batchnorm layer
+                block.gcn2d1 = obj.init_groupedconvlayer(ls(1,1:2),ls(1,3),ls(1,4),ls(1,5),obj.DataType);    % init first 3D conv layer
+                block.gcn2d2 = obj.init_groupedconvlayer(ls(2,1:2),ls(2,3),ls(2,4),ls(2,5),obj.DataType);    % init second 3D conv layer
+                block.bn1    = obj.init_batchnormlayer(prod(ls(2,4:5)),obj.DataType);                        % init batchnorm layer
                            
             end
         end
@@ -645,6 +708,7 @@ classdef generator < DeepNetwork
                 block.cn2d1 = obj.init_convlayer(ls(1,1:2),ls(1,3),ls(1,4),obj.DataType);           % init first 2D conv layer
                 block.cn2d2 = obj.init_convlayer(ls(2,1:2),ls(2,3),ls(2,4),obj.DataType);           % init second 2D conv layer
                 block.bn1   = obj.init_batchnormlayer(ls(2,4),obj.DataType);                        % init batchnorm layer
+
             end
         end
 
@@ -653,6 +717,8 @@ classdef generator < DeepNetwork
             
             info.nBlocks2D = size(layersizes.w2D,1);                                        % determine number of two dimensional convolution layers
             info.nBlocks1D = size(layersizes.w1D,1);                                        % determine number of prediction blocks
+
+            info.avg_g = [];info.avg_sqg = [];
 
             layer.blocks2D = cell(info.nBlocks2D,1);                                        % init 2D conv layers
             layer.blocks1D = cell(info.nBlocks1D,1);                                        % init 1D conv layers
@@ -680,6 +746,7 @@ classdef generator < DeepNetwork
 
                 block.cn1d1     = obj.init_convlayer(ls(1),ls(2),ls(3),obj.DataType);   % init 2D conv
                 block.bn1       = obj.init_batchnormlayer(ls(3),obj.DataType);          % init batchnorm layer
+
             end
         end
 
@@ -687,6 +754,9 @@ classdef generator < DeepNetwork
             % function for initializing inverse detrend layer
 
             info.nBlocks = size(layersizes,1);                                      % determine number of blocks
+
+            info.avg_g = [];info.avg_sqg = [];
+
             layer.blocks = cell(info.nBlocks,1);                                    % init cell array for blocks
                 
             for i = 1:info.nBlocks                                                  % loop through blocks
@@ -700,6 +770,7 @@ classdef generator < DeepNetwork
 
                 layer.tcn1d1    = obj.init_transposedconvlayer(ls(1),ls(2),ls(3),obj.DataType); % transposed 1D convolution layer
                 layer.bn1       = obj.init_batchnormlayer(ls(3),obj.DataType);                  % batchnorm layer
+
             end
         end
 
@@ -731,34 +802,39 @@ classdef generator < DeepNetwork
             layersizes.PL   = predictionlayer_layersizes;       % prediction layer
             layersizes.IDL  = inversedetrend_layersizes;        % inverse detrend layer
 
-
             function layersizes = reweightdetrend_layersizes
                 % function for reweight detrend layer sizes
                 layersizes.IE   = [     % Reweight-Detrend Layer -> Input Encoder
-                    8   64  64;
-                    8   64  128;
+                    4   30  64;
+                    4   64  128;
                 
                     4   128 256;
                     4   256  512;
                 
                     4   512 512;
-                    4   512 512; 
+                    4   512 512;  
                     ];   
 
                 layersizes.RD   = [     % Reweight-Detrend Layer -> Reweight Decoder
-                    12   512     256;
-                    12   256     128;
-                    12   128     64;
-                    11   64      64;
-                    8    64      64;
+                    4   512     256;
+                    4   256     256;
+
+                    4   256     128;
+                    4   128     64;
+
+                    4   64      64;
+                    4   64      30;
                     ];  
 
                 layersizes.DD   = [     % Reweight-Detrend Layer -> Detrend Decoder
-                    12   512     256;
-                    12   256     128;
-                    12   128     64;
-                    11   64      64;    
-                    8    64      64;
+                    4   512     256;
+                    4   256     256;
+
+                    4   256     128;
+                    4   128     64;
+                    
+                    4   64      64;    
+                    4   64      30;
                     ];   
             end
 
@@ -766,17 +842,17 @@ classdef generator < DeepNetwork
                 % function for set encoder layer sizes
 
                 layersizes  = [             % Set Encoding Layer
-                    4   9   7   2   8;
-                    4   9   7   8  16;
-                
-                    4   9   7   16  32;
-                    4   9   7   32  64;
-                
-                    4   7   5   64  128;
-                    4   7   5   128  128;
-                
-                    3   5   3   128 128;
-                    2   5   3   128 512;
+                        3   6   30   32  2;
+                        3   6   32   64  2;
+                    
+                        3   6   32  64  4;
+                        3   6   64  128 4;
+                    
+                        3   3   64  128 8;
+                        3   3   128 256 8;
+                    
+                        3   3   256 128 8;  
+                        3   3   128 64  8;
                     ];  
             end
 
@@ -784,11 +860,11 @@ classdef generator < DeepNetwork
                 % function for estimate encoder layer sizes
 
                 layersizes  = [         % Estimate Encoding Layer
-                    3   16   2   32;
-                    3   16   32  64;
+                    4   4   2   32;
+                    3   4   32  128;
                 
-                    3   9   64  128;
-                    3   9   128  256;
+                    3   4   128  64;
+                    3   4   64  32;
                     ];   
             end
 
@@ -796,37 +872,38 @@ classdef generator < DeepNetwork
                 % function for prediction layer sizes
 
                 layersizes.w2D   = [         % Prediction layer 2D component
-                    3   3   512    512;
-                    3   3   512     256;
+                    3   5   512    256;
+                    3   5   256    128;
+                    3   5   128    64;
+                    2   5   64     32;
                     ];
                 
                 layersizes.w1D   = [         % Prediction Layer 1D component
-                    8   1280    1024;
-                    8   1024   512;
-                    8   512     256;     
+                    4   680    512;
+                    4   512     256;     
                     4   256     128;
                     4   128     64;
                     4   64      32;
-                    2   32      16;
-                    2   16      8;
-                    2   8       4;
-                    1   4       1;
-                    ];   
+                    4   32      16;
+                    4   16      8;
+                    4   8       4;
+                    4   4       1;
+                    ];     
             end
 
             function layersizes = inversedetrend_layersizes
                 % function for inverse-detrend layer sizes
 
-                layersizes  = [     
-                    8   512 256;
-                    8   256 128;
-                    8   128 64;
-                    8   64  32;
-                    8   32  16;
-                    8   16  8;
-                    6   8   4;
-                    4   4   1;
-                    ];   
+                layersizes  = [     % Inverse-Detrend Layer
+                    4   512 256;
+                    4   256 128;
+                    4   128 64;
+                    4   64  32;
+                    3   32  16;
+                    3   16  8;
+                    2   8   4;
+                    2   4   1;
+                    ];    
             end
         end
     end

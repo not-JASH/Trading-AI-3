@@ -5,7 +5,7 @@
         October 2022
 %}
 
-classdef metamodel < temp_DeepNetwork
+classdef metamodel < DeepNetwork
     properties
 
     end
@@ -14,7 +14,7 @@ classdef metamodel < temp_DeepNetwork
         function obj = metamodel(learnrate,WindowSize,nSubsamples)
             % class constructor for metamodel
 
-            obj = obj@temp_DeepNetwork(learnrate);  % call superclass constructor
+            obj = obj@tDeepNetwork(learnrate);  % call superclass constructor
 
             obj.info.WindowSize = WindowSize;       % store windowsize in object
             obj.info.nSubsamples = nSubsamples;     % store nsubsamples in object
@@ -158,31 +158,31 @@ classdef metamodel < temp_DeepNetwork
                             layerparams = metaparams.(append('conv',num2str(count_occurances('conv'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
                             params = layerparams.params;                                            % load size parameters from layerparameters
 
-                            layerinfo{b}{i}.fs = params(1:layerparams.nd);      % load filtersize
-                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+                            layerinfo{b}{i}.fs = params(b,1:layerparams.nd);      % load filtersize
+                            layerinfo{b}{i}.nco = params(b,layerparams.nd+2);     % load nchannels out
 
-                            layerinfo{b}{i}.stride = layerparams.stride;        % load stride
+                            layerinfo{b}{i}.stride = layerparams.stride(b,:);        % load stride
 
                         case 'conv_same'
                             layerparams = metaparams.(append('conv_same',num2str(count_occurances('conv_same'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
                             params = layerparams.params;                        % load size parameters from layerparameters
                             % this layer also has nchannels in and filtersize but those parameters are not required for getting output size
-                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+                            layerinfo{b}{i}.nco = params(b,layerparams.nd+2);     % load nchannels out
 
                         case 'tconv'
                             layerparams = metaparams.(append('tconv',num2str(count_occurances('tconv'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
                             params = layerparams.params;                        % load size parameters from layerparameters
 
-                            layerinfo{b}{i}.fs = params(1:layerparams.nd);      % load filtersize
-                            layerinfo{b}{i}.nco = params(layerparams.nd+2);     % load nchannels out
+                            layerinfo{b}{i}.fs = params(b,1:layerparams.nd);      % load filtersize
+                            layerinfo{b}{i}.nco = params(b,layerparams.nd+2);     % load nchannels out
 
-                            layerinfo{b}{i}.stride = layerparams.stride;        % load stride
+                            layerinfo{b}{i}.stride = layerparams.stride(b,:);        % load stride
 
                         case 'maxpool'
                             layerparams = metaparams.(append('maxpool',num2str(count_occurances('maxpool'))));     % read layerinfo from metaparameters, adjust field name for nth occurances of a layertype
                             
-                            layerinfo{b}{i}.poolsize = layerparams.poolsize;    % pool size
-                            layerinfo{b}{i}.stride = layerparams.stride;        % stride
+                            layerinfo{b}{i}.poolsize = layerparams.poolsize(b,:);    % pool size
+                            layerinfo{b}{i}.stride = layerparams.stride(b,:);        % stride
                     end
                 end
             end          

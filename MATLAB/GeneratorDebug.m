@@ -5,14 +5,25 @@
         October 2022
 %}
 
+% Set Training Variables
+
+WindowSize              = 80;
+ExtrapolationLength     = 15;
+Overlap                 = 20;
+nSubsamples             = 30;
+nSamples                = 1e3;
+
+BatchSize               = 48;
+
+ns = nSubsamples;
 
 % Establish sizes for each layer
 
 % layersizes.SL   = [];   % Scaling Layer
 
 layersizes.RDL.IE   = [     % Reweight-Detrend Layer -> Input Encoder
-    8   64  64;
-    8   64  128;
+    4   ns  64;
+    4   64  128;
 
     4   128 256;
     4   256  512;
@@ -20,83 +31,81 @@ layersizes.RDL.IE   = [     % Reweight-Detrend Layer -> Input Encoder
     4   512 512;
     4   512 512; 
     ];   
+
 layersizes.RDL.RD   = [     % Reweight-Detrend Layer -> Reweight Decoder
-    12   512     256;
-    12   256     128;
-    12   128     64;
-    11   64      64;
-    8    64      64;
+    4   512     256;
+    4   256     256;
+    4   256     128;
+    4   128     64;
+    4   64      64;
+    4   64      30;
     ];  
+
 layersizes.RDL.DD   = [     % Reweight-Detrend Layer -> Detrend Decoder
-    12   512     256;
-    12   256     128;
-    12   128     64;
-    11   64      64;    
-    8    64      64;
+    4   512     256;
+    4   256     256;
+    4   256     128;
+    4   128     64;
+    4   64      64;    
+    4   64      30;
     ];   
 
 layersizes.WTL  = [];       % Wavelet Transform Layer
 layersizes.SEL  = [         % Set Encoding Layer
-    4   9   7   2   16;
-    4   9   7   16  32;
+    3   6   30   32  2;
+    3   6   32   64  2;
 
-    4   9   7   32  64;
-    4   9   7   64  128;
+    3   6   32  64  4;
+    3   6   64  128 4;
 
-    4   7   5   128  256;
-    4   7   5   256  512;
+    3   3   64  128 8;
+    3   3   128 256 8;
 
-    3   5   3   512 512;
-    2   5   3   512 512;
+    3   3   256 128 8;  
+    3   3   128 64  8;
+
     ];   
 
 layersizes.EEL  = [         % Estimate Encoding Layer
-    3   16   2   32;
-    3   16   32  64;
+    4   4   2   32;
+    3   4   32  128;
 
-    3   9   64  128;
-    3   9   128  256;
+    3   4   128  64;
+    3   4   64  32;
     ];   
 
 layersizes.PL.w2D   = [         % Prediction layer 2D component
-    3   3   512    512;
-    3   3   512     256;
+    3   5   512    256;
+    3   5   256    128;
+    3   5   128    64;
+    2   5   64     32;
     ];
 
 layersizes.PL.w1D   = [         % Prediction Layer 1D component
-    8   1280    1024;
-    8   1024   512;
-    8   512     256;     
+    4   680    512;
+    4   512     256;     
     4   256     128;
     4   128     64;
     4   64      32;
-    2   32      16;
-    2   16      8;
-    2   8       4;
-    1   4       1;
+    4   32      16;
+    4   16      8;
+    4   8       4;
+    4   4       1;
     ];   
+
 layersizes.IDL  = [     % Inverse-Detrend Layer
-    8   512 256;
-    8   256 128;
-    8   128 64;
-    8   64  32;
-    8   32  16;
-    8   16  8;
-    6   8   4;
-    4   4   1;
+    4   512 256;
+    4   256 128;
+    4   128 64;
+    4   64  32;
+    3   32  16;
+    3   16  8;
+    2   8   4;
+    2   4   1;
     ];   
+
+return
 % layersizes.ISL  = [];   % Inverse-Scaling Layer
-
-% Set Training Variables
-
-WindowSize              = 80;
-ExtrapolationLength     = 15;
-Overlap                 = 20;
-nSubsamples             = 64;
-nSamples                = 1e3;
-
-BatchSize               = 48;
-
 
 InputSize = nSubsamples*(WindowSize-Overlap) + WindowSize;
 
