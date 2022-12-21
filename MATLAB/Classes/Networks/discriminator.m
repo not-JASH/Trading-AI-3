@@ -140,6 +140,7 @@ classdef discriminator < DeepNetwork
                     4   9   128 256;    
                     4   9   256 1;                
                     ];
+
             end      
         end
     end

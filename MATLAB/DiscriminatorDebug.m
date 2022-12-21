@@ -8,14 +8,14 @@
 
 layersizes.PL = [               % discriminator prediction layer sizes
         
-    4   9   2   16;
-    4   9   16  32
+    16   36   2   32;
+    12   27   32  32
 
-    4   9   32  64;
-    4   9   64  128;
+    4   9   32  128;
+    4   9   128  128;
     
-    4   9   128 256;    
-    4   9   256 1;
+    4   9   128 512;    
+    4   9   512 1;     
     ];
 
 windowsize  = 80;       % windowsize

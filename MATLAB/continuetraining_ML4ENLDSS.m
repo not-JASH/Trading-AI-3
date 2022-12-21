@@ -1,54 +1,63 @@
 %{
         Meta Learning for Extrapolating Nonlinear Dynamic Stochastic
         Systems
+    
+        Continue Training loop 
 
+        (all variables are already initialized)
+
+    
         Jashua Luna
         December 2022
 
         No objects.
 %}
 
-
 %% Global variables
-getWro
+% getworkers;
 
-ws = 80;
-exl = floor(.5*ws);
-ovl = 30;
-nss = 30;
+% 0 5 10 20 40 80 160
 
-[lrg,lrd] = deal(1e-3);
+% efr = .4;
+% 
+% ws = 80;
+% exl = floor(efr*ws);
+% ovl = 30;
+% nss = 30;
+% 
+% [lrg,lrd] = deal(1e-3);
+% 
+% ns = 5e3;
+% bs = 50;
+% nvs = 15;
+% 
+% %% Initialize variables
+% 
+% gen = generator([],ws,exl,ovl,nss,bs,lrg);
+% gen = gen.weights;  % keep just the weights
 
-ns = 5e3;
-bs = 50;
-nvs = 15;
+% disc = discriminator([],ws,lrd);
+% disc = disc.weights;    % keep just the weights
 
+% data = get_data2;
 
-%% Initialize variables
+% [xdata,ydata] = deal(cell(ns,1));
 
-gen = generator([],ws,exl,ovl,nss,bs,lrg);
-gen = gen.weights;  % keep just the weights
+% parfor i = 1:ns
+%     [xdata(i),ydata(i)] = datagen(data,1,ws,nss,ovl,exl);
+% end
 
-disc = discriminator([],ws,lrd);
-disc = disc.weights;    % keep just the weights
-
-data = get_data;
-
-[xdata,ydata] = deal(cell(ns,1));
-
-
-[xdata,ydata] = datagen(data,ns,ws,nss,ovl,exl);
-
-[rdl.avg_g,rdl.avg_sqg,pl.avg_g,pl.avg_sqg,idl.avg_g,idl.avg_sqg,e.avg_g,e.avg_sqg,disc_avg_g,disc_avg_sqg] = deal([]);
+% [rdl.avg_g,rdl.avg_sqg,pl.avg_g,pl.avg_sqg,idl.avg_g,idl.avg_sqg,e.avg_g,e.avg_sqg,disc_avg_g,disc_avg_sqg] = deal([]);
 
 %% Training Loop
 
-epoch = 1;
-iter = 1;
-total_time = 0;
-iteration_time = 0;
+% epoch = 1;
+% iter = 1;
+% total_time = 0;
+% iteration_time = 0;
+% avg_e = 1;
 
-while true
+while avg_e > 0.08 && epoch <= 300
     tic 
 
     shuffle_locs = randperm(ns);
@@ -84,8 +93,9 @@ while true
     validxh = inject_noise(inject_noise(validx(end-ws+1:end,:,:)));
     y = gatext(gen_predict(gen,validx,validxh,ws,nss,ovl));
     Y = squeeze(gatext(validy.y));
-
-    fprintf("Average Error: %.3f\n",mean(abs(Y-y),'all')); 
+    avg_e = mean(abs(Y-y),'all');
+    
+    fprintf("Average Error: %.3f\n",avg_e); 
     
     for i = 1:nvs
         subplot(nvs,2,2*i-1)
@@ -93,12 +103,14 @@ while true
         hold on 
         plot(y(:,i));
         hold off
+        xline(ws-exl)
 
         subplot(nvs,2,2*i)
         plot(cumsum(Y(:,i)));
         hold on 
         plot(cumsum(y(:,i)));
         hold off
+        xline(ws-exl);
     end
     
     f = getframe;  
@@ -106,12 +118,57 @@ while true
     iteration_time = toc;                           % how long did this iteration take
     total_time = iteration_time + total_time;       % add iteration time to total time
     [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
-    fprintf("Iteration %d Complete, Time Elapsed: %.2f s\n",epoch,iteration_time);   % display iteration info
+    fprintf("Epoch %d Complete, Time Elapsed: %.2f s\n",epoch,iteration_time);   % display iteration info
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
-    
+
+    epoch = epoch+1;    
 end
 
+[err,verr] = evaluate_generator(xdata,ydata,gen,ws,nss,ovl,bs,exl);
+
+
 %% Functions 
+
+function [error,valid_error] = evaluate_generator(xdata,ydata,gen,ws,nss,ovl,bs,exl)
+
+    nevalsamples = 5e2;
+
+    error = zeros(length(xdata)/bs,1);
+    batchlocs = [1:bs];
+    i = 1;
+
+    while ~isempty(batchlocs)
+        [xbatch,ybatch] = getbatch(xdata(batchlocs),ydata(batchlocs));
+        xh = inject_noise(xbatch(end-ws+1:end,:,:));
+        y = gen_predict(gen,xbatch,xh,ws,nss,ovl);
+        error(i) = mean(abs(gatext(squeeze(ybatch.y))-gatext(y)),'all');
+        i = i+1;
+        batchlocs = batchlocs + bs;
+        batchlocs(batchlocs>length(xdata)) = [];
+    end
+
+    fprintf("Average error on training set: %.3f\n",mean(error));
+    
+    data = get_data;
+    [validx,validy] = datagen(data,nevalsamples,ws,nss,ovl,exl);
+
+    valid_error = zeros(nevalsamples/bs,1);
+    batchlocs = [1:bs];
+    i = 1;
+
+    while ~isempty(batchlocs)
+        [xbatch,ybatch] = getbatch(validx(batchlocs),validy(batchlocs));
+        xh = inject_noise(xbatch(end-ws+1:end,:,:));
+        y = gen_predict(gen,xbatch,xh,ws,nss,ovl);
+        valid_error(i) = mean(abs(gatext(squeeze(ybatch.y))-gatext(y)),'all');
+        i = i+1;
+        batchlocs = batchlocs + bs;
+        batchlocs(batchlocs>nevalsamples) = [];
+    end
+
+    fprintf("Average error on validation set: %.3f\n",mean(valid_error));
+
+end
 
 function [xbatch,ybatch] = getbatch(x,y)
 
@@ -248,8 +305,6 @@ function [y,ScaleFactor] = scalinglayer(x)
     function sf = confidence_bounds(sample,ci)
         % function for determining scale factor based on confidence interval
         
-        assert(~isdlarray(sample),"ugh!")
-
         [mu,sig] = normfit(sample);              % fit standard distribution to data
         x1 = linspace(min(sample),max(sample),1e3);    % make points at which normcdf will be evaluated
         p = normcdf(x1,mu,sig);              % evaluate norm cdf
