@@ -13,7 +13,7 @@ getworkers;
 
 % 0 5 10 20 40 80 160
 
-efr = .8;
+efr = .2;
 
 ws = 80;
 exl = floor(efr*ws);

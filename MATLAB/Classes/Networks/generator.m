@@ -17,27 +17,27 @@ classdef generator < DeepNetwork
         function obj = generator(layersizes,WindowSize,ExtrapolationLength,Overlap,nSubsamples,BatchSize,learnrate)
              % constructor
 
-             obj = obj@DeepNetwork(learnrate);  % call superclass constructor
+            obj = obj@DeepNetwork(learnrate);  % call superclass constructor
 
-             if isempty(layersizes)                             % if layersizes are unspecified
-                 layersizes = generator.layersizes_generator;   % use default sizes
-             end
+            if isempty(layersizes)                             % if layersizes are unspecified
+                layersizes = generator.layersizes_generator;   % use default sizes
+            end
 
-             obj.info.WindowSize            = WindowSize;           % Sample windowSize
-             obj.info.ExtrapolationLength   = ExtrapolationLength;  % Extrapolation length     
-             obj.info.Overlap               = Overlap;              % Subsample overlap
-             obj.info.nSubsamples           = nSubsamples;          % No. subsamples     
-             obj.info.BatchSize             = BatchSize;            % Batch Size
+            obj.info.WindowSize            = WindowSize;           % Sample windowSize
+            obj.info.ExtrapolationLength   = ExtrapolationLength;  % Extrapolation length     
+            obj.info.Overlap               = Overlap;              % Subsample overlap
+            obj.info.nSubsamples           = nSubsamples;          % No. subsamples     
+            obj.info.BatchSize             = BatchSize;            % Batch Size
 
-             obj.data               = get_data;         % read historical price data from file
+            obj.data               = get_data;         % read historical price data from file
 
 %              [obj.weights.SL,obj.info.SL]       = obj.init_scalinglayer(layersizes.SL);               % Initialize scaling layer.
-             [obj.weights.RDL,obj.info.RDL]     = obj.init_reweightdetrendlayer(layersizes.RDL);        % Initialize reweight-detrend layer.
-             [~,obj.info.WTL]                   = obj.init_waveletlayer(layersizes.WTL);                % Initialize wavelet layer.
-             [obj.weights.E.SEL,obj.info.E.SEL] = obj.init_set_encodinglayer(layersizes.SEL);           % Initialize set-encoder.
-             [obj.weights.E.EEL,obj.info.E.EEL] = obj.init_estimate_encodinglayer(layersizes.EEL);      % Initialize estimate-encoder.
-             [obj.weights.PL,obj.info.PL]       = obj.init_predictionlayer(layersizes.PL);              % Initialize prediction layer.
-             [obj.weights.IDL,obj.info.IDL]     = obj.init_inversedetrendlayer(layersizes.IDL);         % Initialize inverse-detrend layer.
+            [obj.weights.RDL,obj.info.RDL]     = obj.init_reweightdetrendlayer(layersizes.RDL);        % Initialize reweight-detrend layer.
+            [~,obj.info.WTL]                   = obj.init_waveletlayer(layersizes.WTL);                % Initialize wavelet layer.
+            [obj.weights.E.SEL,obj.info.E.SEL] = obj.init_set_encodinglayer(layersizes.SEL);           % Initialize set-encoder.
+            [obj.weights.E.EEL,obj.info.E.EEL] = obj.init_estimate_encodinglayer(layersizes.EEL);      % Initialize estimate-encoder.
+            [obj.weights.PL,obj.info.PL]       = obj.init_predictionlayer(layersizes.PL);              % Initialize prediction layer.
+            [obj.weights.IDL,obj.info.IDL]     = obj.init_inversedetrendlayer(layersizes.IDL);         % Initialize inverse-detrend layer.
 %              [obj.weights.ISL,obj.info.ISL]     = obj.init_inversescalinglayer(layersizes.ISL);         % Initialize inverse-scaling layer.
 
             obj.info.E.avg_g = [];obj.info.E.avg_sqg = [];  % initialize encoder average gradient and average squared gradient
