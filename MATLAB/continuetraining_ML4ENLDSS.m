@@ -57,7 +57,7 @@
 % iteration_time = 0;
 % avg_e = 1;
 
-while avg_e > 0.08 && epoch <= 300
+while avg_e > 0.08 
     tic 
 
     shuffle_locs = randperm(ns);
@@ -120,6 +120,10 @@ while avg_e > 0.08 && epoch <= 300
     [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
     fprintf("Epoch %d Complete, Time Elapsed: %.2f s\n",epoch,iteration_time);   % display iteration info
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
+
+    if rem(epoch,10) == 0
+        save(sprintf("checkpointsave_%d.mat",epoch));
+    end
 
     epoch = epoch+1;    
 end

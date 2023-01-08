@@ -14,7 +14,7 @@ getworkers(nworkers);
 
 % 0 5 10 20 40 80 160
 
-efr = .2;
+efr = .15;
 
 ws = 80;
 exl = floor(efr*ws);
@@ -23,8 +23,8 @@ nss = 30;
 
 [lrg,lrd] = deal(1e-3);
 
-ns = 5e3;
-bs = 50;
+ns = 1e3;
+bs = 10;
 nvs = 15;
 
 %% Initialize variables

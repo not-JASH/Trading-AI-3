@@ -22,8 +22,8 @@ nss = 30;
 
 [lrg,lrd] = deal(1e-3);
 
-ns = 5e3;
-bs = 50;
+ns = 1e4;
+bs = 50 ;
 nvs = 15;
 
 %% Initialize variables
@@ -34,7 +34,7 @@ gen = gen.weights;  % keep just the weights
 disc = discriminator([],ws,lrd);
 disc = disc.weights;    % keep just the weights
 
-data = get_data2;
+data = get_data;
 
 [xdata,ydata] = deal(cell(ns,1));
 
@@ -52,13 +52,17 @@ total_time = 0;
 iteration_time = 0;
 avg_e = 1;
 
-while avg_e > 0.08 && epoch <= 300
+fprintf("Starting Training Loop\n");    
+
+while avg_e > 0.08 
     tic 
 
     shuffle_locs = randperm(ns);
     batchlocs = [1:bs];
 
     while ~isempty(batchlocs)
+        progressbar(batchlocs(end)/ns);
+
         [xbatch,ybatch] = getbatch(xdata(shuffle_locs(batchlocs)),ydata(shuffle_locs(batchlocs)));
         [grad_gen,grad_disc] = dlfeval(@modelgradients,gen,disc,xbatch,ybatch,ws,nss,ovl);
 
@@ -115,6 +119,10 @@ while avg_e > 0.08 && epoch <= 300
     [d,h,m,s] = gettimestats(total_time);           % calculate time in days hours minutes seconds
     fprintf("Epoch %d Complete, Time Elapsed: %.2f s\n",epoch,iteration_time);   % display iteration info
     fprintf("Total Time Elapsed: %s:%s:%s:%s\n\n",d,h,m,s);                         % display training time info
+
+    if rem(epoch,10) == 0
+        save(sprintf("checkpointsave_%d.mat",epoch));
+    end
 
     epoch = epoch+1;    
 end
@@ -295,7 +303,10 @@ function [y,ScaleFactor] = scalinglayer(x)
         ScaleFactor = permute(ScaleFactor,[2 1]);
     end
     
-    y = x./ScaleFactor;                                   % 
+    y = x./ScaleFactor;                                   
+
+    y(isnan(y)) = 0;
+    y(isinf(y)) = 0;
             
     function sf = confidence_bounds(sample,ci)
         % function for determining scale factor based on confidence interval
